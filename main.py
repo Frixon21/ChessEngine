@@ -15,11 +15,11 @@ GAMES_PER_ITERATION = 256   # Number of games generated in each self-play phase 
 EPOCHS_PER_ITERATION = 2    # Number of training epochs on the data from one iteration
 BATCH_SIZE = 256            # Training batch size (adjust based on GPU memory)
 LEARNING_RATE = 0.001       # Training learning rate
-NUM_WORKERS = 8             # Number of parallel workers for self-play (adjust based on CPU cores/GPU)
+NUM_WORKERS = 5             # Number of parallel workers for self-play (adjust based on CPU cores/GPU)
 
 # --- Dynamic MCTS Simulation Settings ---
-INITIAL_MCTS_SIMULATIONS = 50  # Starting number of simulations
-MAX_MCTS_SIMULATIONS = 400   # Target maximum simulations by the end
+INITIAL_MCTS_SIMULATIONS = 400  # Starting number of simulations
+MAX_MCTS_SIMULATIONS = 1000   # Target maximum simulations by the end
 # MCTS_SIMULATIONS = 50 # <--- Remove or comment out the old static value
 
 MODEL_CHECKPOINT = "trained_model.pth" # Path to save/load the model
@@ -50,7 +50,7 @@ if __name__ == "__main__":
     # --- Main Training Loop ---
     current_model_path = MODEL_CHECKPOINT
 
-    for iteration in range(5, NUM_ITERATIONS + 1):
+    for iteration in range(14, NUM_ITERATIONS + 1):
         print(f"\n===== ITERATION {iteration}/{NUM_ITERATIONS} =====")
 
         # --- Calculate MCTS simulations for this iteration ---

@@ -1,0 +1,184 @@
+(.venv) C:\Users\alexp\Chess Engine\Project>main.py
+Multiprocessing start method set to 'spawn'.
+Using device: cuda
+Found existing model at trained_model.pth. Resuming training.
+
+===== ITERATION 5/50 =====
+Using 79 MCTS simulations for self-play this iteration.
+Starting self-play phase (256 games)...
+Self-Play Games: 100%|███████████████████████████████████████████████████████████████| 256/256 [53:14<00:00, 12.48s/it]
+Gathering results from workers...
+Processing Results: 100%|████████████████████████████████████████████████████████| 256/256 [00:00<00:00, 255774.61it/s]
+Self-play finished. Completed 256/256 games.
+  Results: White Wins=0, Black Wins=0, Draws=256, Other=0
+  Draw Rate: 100.00%
+  Average Game Length: 60.86 moves (plies)
+  Generated 15581 training samples.
+Starting training phase (2 epochs)...
+Using cuda device
+Loading model weights from trained_model.pth
+Overall Training Progress:  50%|███████████████████████████                           | 61/122 [00:19<00:02, 22.08it/s]Epoch 1/2, Loss: 2.8143
+Overall Training Progress: 100%|█████████████████████████████████████████████████████| 122/122 [00:39<00:00, 23.92it/s]Epoch 2/2, Loss: 2.6474
+Overall Training Progress: 100%|█████████████████████████████████████████████████████| 122/122 [00:40<00:00,  3.04it/s]
+Training complete, model saved as trained_model.pth
+Training finished. Updated model saved to trained_model.pth
+
+===== ITERATION 6/50 =====
+Using 86 MCTS simulations for self-play this iteration.
+Starting self-play phase (256 games)...
+Self-Play Games: 100%|███████████████████████████████████████████████████████████████| 256/256 [59:43<00:00, 14.00s/it]
+Gathering results from workers...
+Processing Results: 100%|████████████████████████████████████████████████████████| 256/256 [00:00<00:00, 257553.81it/s]
+Self-play finished. Completed 256/256 games.
+  Results: White Wins=0, Black Wins=1, Draws=255, Other=0
+  Draw Rate: 99.61%
+  Average Game Length: 60.34 moves (plies)
+  Generated 15447 training samples.
+Starting training phase (2 epochs)...
+Using cuda device
+Loading model weights from trained_model.pth
+Overall Training Progress:  50%|███████████████████████████                           | 61/122 [00:18<00:02, 23.07it/s]Epoch 1/2, Loss: 2.4947
+Overall Training Progress: 100%|█████████████████████████████████████████████████████| 122/122 [00:36<00:00, 24.05it/s]Epoch 2/2, Loss: 2.3657
+Overall Training Progress: 100%|█████████████████████████████████████████████████████| 122/122 [00:37<00:00,  3.25it/s]
+Training complete, model saved as trained_model.pth
+Training finished. Updated model saved to trained_model.pth
+
+===== ITERATION 7/50 =====
+Using 93 MCTS simulations for self-play this iteration.
+Starting self-play phase (256 games)...
+Self-Play Games: 100%|█████████████████████████████████████████████████████████████| 256/256 [1:03:40<00:00, 14.92s/it]
+Gathering results from workers...
+Processing Results: 100%|████████████████████████████████████████████████████████| 256/256 [00:00<00:00, 267899.66it/s]
+Self-play finished. Completed 256/256 games.
+  Results: White Wins=0, Black Wins=0, Draws=256, Other=0
+  Draw Rate: 100.00%
+  Average Game Length: 59.02 moves (plies)
+  Generated 15108 training samples.
+Starting training phase (2 epochs)...
+Using cuda device
+Loading model weights from trained_model.pth
+Overall Training Progress:  48%|██████████████████████████                            | 58/120 [00:18<00:02, 23.38it/s]Epoch 1/2, Loss: 2.2691
+Overall Training Progress:  98%|████████████████████████████████████████████████████ | 118/120 [00:37<00:00, 23.28it/s]Epoch 2/2, Loss: 2.2198
+Overall Training Progress: 100%|█████████████████████████████████████████████████████| 120/120 [00:38<00:00,  3.11it/s]
+Training complete, model saved as trained_model.pth
+Training finished. Updated model saved to trained_model.pth
+
+===== ITERATION 8/50 =====
+Using 100 MCTS simulations for self-play this iteration.
+Starting self-play phase (256 games)...
+Self-Play Games: 100%|█████████████████████████████████████████████████████████████| 256/256 [1:06:52<00:00, 15.67s/it]
+Gathering results from workers...
+Processing Results: 100%|████████████████████████████████████████████████████████| 256/256 [00:00<00:00, 251933.79it/s]
+Self-play finished. Completed 256/256 games.
+  Results: White Wins=0, Black Wins=0, Draws=256, Other=0
+  Draw Rate: 100.00%
+  Average Game Length: 57.40 moves (plies)
+  Generated 14695 training samples.
+Starting training phase (2 epochs)...
+Using cuda device
+Loading model weights from trained_model.pth
+Overall Training Progress:  50%|███████████████████████████                           | 58/116 [00:17<00:02, 23.24it/s]Epoch 1/2, Loss: 2.0577
+Overall Training Progress:  99%|████████████████████████████████████████████████████▌| 115/116 [00:35<00:00, 23.12it/s]Epoch 2/2, Loss: 1.9629
+Overall Training Progress: 100%|█████████████████████████████████████████████████████| 116/116 [00:36<00:00,  3.20it/s]
+Training complete, model saved as trained_model.pth
+Training finished. Updated model saved to trained_model.pth
+
+===== ITERATION 9/50 =====
+Using 107 MCTS simulations for self-play this iteration.
+Starting self-play phase (256 games)...
+Self-Play Games: 100%|█████████████████████████████████████████████████████████████| 256/256 [1:11:31<00:00, 16.76s/it]
+Gathering results from workers...
+Processing Results: 100%|████████████████████████████████████████████████████████████████████| 256/256 [00:00<?, ?it/s]
+Self-play finished. Completed 256/256 games.
+  Results: White Wins=0, Black Wins=0, Draws=256, Other=0
+  Draw Rate: 100.00%
+  Average Game Length: 57.46 moves (plies)
+  Generated 14710 training samples.
+Starting training phase (2 epochs)...
+Using cuda device
+Loading model weights from trained_model.pth
+Overall Training Progress:  50%|███████████████████████████                           | 58/116 [00:17<00:02, 23.08it/s]Epoch 1/2, Loss: 1.9685
+Overall Training Progress: 100%|█████████████████████████████████████████████████████| 116/116 [00:35<00:00, 24.56it/s]Epoch 2/2, Loss: 1.8529
+Overall Training Progress: 100%|█████████████████████████████████████████████████████| 116/116 [00:35<00:00,  3.23it/s]
+Training complete, model saved as trained_model.pth
+Training finished. Updated model saved to trained_model.pth
+
+===== ITERATION 10/50 =====
+Using 114 MCTS simulations for self-play this iteration.
+Starting self-play phase (256 games)...
+Self-Play Games: 100%|█████████████████████████████████████████████████████████████| 256/256 [1:15:26<00:00, 17.68s/it]
+Gathering results from workers...
+Processing Results: 100%|████████████████████████████████████████████████████████| 256/256 [00:00<00:00, 256079.61it/s]
+Self-play finished. Completed 256/256 games.
+  Results: White Wins=0, Black Wins=0, Draws=256, Other=0
+  Draw Rate: 100.00%
+  Average Game Length: 57.11 moves (plies)
+  Generated 14619 training samples.
+Starting training phase (2 epochs)...
+Using cuda device
+Loading model weights from trained_model.pth
+Overall Training Progress:  50%|███████████████████████████                           | 58/116 [00:17<00:02, 23.46it/s]Epoch 1/2, Loss: 1.8129
+Overall Training Progress:  99%|████████████████████████████████████████████████████▌| 115/116 [00:35<00:00, 23.21it/s]Epoch 2/2, Loss: 1.7620
+Overall Training Progress: 100%|█████████████████████████████████████████████████████| 116/116 [00:36<00:00,  3.22it/s]
+Training complete, model saved as trained_model.pth
+Training finished. Updated model saved to trained_model.pth
+
+===== ITERATION 11/50 =====
+Using 121 MCTS simulations for self-play this iteration.
+Starting self-play phase (256 games)...
+Self-Play Games: 100%|█████████████████████████████████████████████████████████████| 256/256 [1:21:47<00:00, 19.17s/it]
+Gathering results from workers...
+Processing Results: 100%|████████████████████████████████████████████████████████| 256/256 [00:00<00:00, 255652.82it/s]
+Self-play finished. Completed 256/256 games.
+  Results: White Wins=0, Black Wins=0, Draws=256, Other=0
+  Draw Rate: 100.00%
+  Average Game Length: 58.22 moves (plies)
+  Generated 14905 training samples.
+Starting training phase (2 epochs)...
+Using cuda device
+Loading model weights from trained_model.pth
+Overall Training Progress:  49%|██████████████████████████▌                           | 58/118 [00:17<00:02, 23.56it/s]Epoch 1/2, Loss: 1.7897
+Overall Training Progress:  99%|████████████████████████████████████████████████████▌| 117/118 [00:35<00:00, 23.53it/s]Epoch 2/2, Loss: 1.7101
+Overall Training Progress: 100%|█████████████████████████████████████████████████████| 118/118 [00:36<00:00,  3.24it/s]
+Training complete, model saved as trained_model.pth
+Training finished. Updated model saved to trained_model.pth
+
+===== ITERATION 12/50 =====
+Using 129 MCTS simulations for self-play this iteration.
+Starting self-play phase (256 games)...
+Self-Play Games: 100%|█████████████████████████████████████████████████████████████| 256/256 [1:24:10<00:00, 19.73s/it]
+Gathering results from workers...
+Processing Results: 100%|████████████████████████████████████████████████████████████████████| 256/256 [00:00<?, ?it/s]
+Self-play finished. Completed 256/256 games.
+  Results: White Wins=0, Black Wins=0, Draws=256, Other=0
+  Draw Rate: 100.00%
+  Average Game Length: 56.74 moves (plies)
+  Generated 14526 training samples.
+Starting training phase (2 epochs)...
+Using cuda device
+Loading model weights from trained_model.pth
+Overall Training Progress:  48%|██████████████████████████                            | 55/114 [00:17<00:02, 23.16it/s]Epoch 1/2, Loss: 1.7131
+Overall Training Progress:  98%|████████████████████████████████████████████████████ | 112/114 [00:35<00:00, 23.19it/s]Epoch 2/2, Loss: 1.6358
+Overall Training Progress: 100%|█████████████████████████████████████████████████████| 114/114 [00:35<00:00,  3.19it/s]
+Training complete, model saved as trained_model.pth
+Training finished. Updated model saved to trained_model.pth
+
+===== ITERATION 13/50 =====
+Using 136 MCTS simulations for self-play this iteration.
+Starting self-play phase (256 games)...
+Self-Play Games: 100%|█████████████████████████████████████████████████████████████| 256/256 [1:27:39<00:00, 20.55s/it]
+Gathering results from workers...
+Processing Results: 100%|████████████████████████████████████████████████████████| 256/256 [00:00<00:00, 255774.61it/s]
+Self-play finished. Completed 256/256 games.
+  Results: White Wins=0, Black Wins=0, Draws=256, Other=0
+  Draw Rate: 100.00%
+  Average Game Length: 56.02 moves (plies)
+  Generated 14340 training samples.
+Starting training phase (2 epochs)...
+Using cuda device
+Loading model weights from trained_model.pth
+Overall Training Progress:  48%|██████████████████████████                            | 55/114 [00:17<00:02, 23.21it/s]Epoch 1/2, Loss: 1.6734
+Overall Training Progress:  98%|████████████████████████████████████████████████████ | 112/114 [00:35<00:00, 23.08it/s]Epoch 2/2, Loss: 1.6406
+Overall Training Progress: 100%|█████████████████████████████████████████████████████| 114/114 [00:35<00:00,  3.20it/s]
+Training complete, model saved as trained_model.pth
+Training finished. Updated model saved to trained_model.pth
