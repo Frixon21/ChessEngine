@@ -2,11 +2,13 @@
 import os
 import torch
 import torch.multiprocessing as mp
-import math # Import math for ceiling function if needed
+import time
 
 from neural_network import ChessNet
-from self_play import run_parallel_self_play
+# from self_play import run_parallel_self_play
+from slef_play_batch import run_parallel_self_play_batch
 from train import train_network
+
 
 
 # --- Configuration ---
@@ -16,14 +18,15 @@ EPOCHS_PER_ITERATION = 2    # Number of training epochs on the data from one ite
 BATCH_SIZE = 256            # Training batch size (adjust based on GPU memory)
 LEARNING_RATE = 0.001       # Training learning rate
 NUM_WORKERS = 5             # Number of parallel workers for self-play (adjust based on CPU cores/GPU)
+INFERENCE_BATCH_SIZE = 32   # Batch size for inference during self-play (adjust based on GPU memory)
 
 # --- Dynamic MCTS Simulation Settings ---
-INITIAL_MCTS_SIMULATIONS = 400  # Starting number of simulations
-MAX_MCTS_SIMULATIONS = 1000   # Target maximum simulations by the end
+INITIAL_MCTS_SIMULATIONS = 800  # Starting number of simulations
+MAX_MCTS_SIMULATIONS = 1600   # Target maximum simulations by the end
 # MCTS_SIMULATIONS = 50 # <--- Remove or comment out the old static value
 
 MODEL_CHECKPOINT = "trained_model.pth" # Path to save/load the model
-
+PGNS_TO_SAVE_PER_ITERATION = 10 # Save the first 10 games each iteration
 
 if __name__ == "__main__":
 
@@ -50,7 +53,7 @@ if __name__ == "__main__":
     # --- Main Training Loop ---
     current_model_path = MODEL_CHECKPOINT
 
-    for iteration in range(14, NUM_ITERATIONS + 1):
+    for iteration in range(1, NUM_ITERATIONS + 1):
         print(f"\n===== ITERATION {iteration}/{NUM_ITERATIONS} =====")
 
         # --- Calculate MCTS simulations for this iteration ---
@@ -72,13 +75,20 @@ if __name__ == "__main__":
 
         # --- Step 1: Self-Play Data Generation ---
         print(f"Starting self-play phase ({GAMES_PER_ITERATION} games)...")
+        start_time = time.time()
 
-        samples, game_results, game_lengths = run_parallel_self_play(
+        samples, game_results, game_lengths = run_parallel_self_play_batch(
             num_games=GAMES_PER_ITERATION,
             model_path=current_model_path,
             num_workers=NUM_WORKERS,
-            mcts_simulations=current_mcts_simulations
+            mcts_simulations=current_mcts_simulations,
+            inference_batch_size=INFERENCE_BATCH_SIZE,
+            iteration_num=iteration,                 # Pass current iteration
+            num_pgns_to_save=PGNS_TO_SAVE_PER_ITERATION # Pass save count
         )
+        end_time = time.time()
+        self_play_duration = end_time - start_time
+        print(f"Self-play phase took {self_play_duration:.2f} seconds.")
         
         # --- Calculate and Print Statistics ---
         num_games_completed = len(game_results)
