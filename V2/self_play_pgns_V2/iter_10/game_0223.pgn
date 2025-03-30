@@ -1,0 +1,11 @@
+[Event "Self-Play Batch"]
+[Site "Local"]
+[Date "????.??.??"]
+[Round "?"]
+[White "FrixBot_Sim947"]
+[Black "FrixBot_Sim947"]
+[Result "1/2-1/2"]
+[Termination "MaxMovesReached"]
+[PlyCount "200"]
+
+1. b3 h6 2. a3 c6 3. c3 f6 4. c4 d5 5. d3 e5 6. Bd2 g5 7. Ra2 Qb6 8. e3 Rh7 9. b4 Na6 10. f3 Bd7 11. Ke2 Kd8 12. e4 c5 13. Qc2 Nxb4 14. Ra1 Ke7 15. Ke3 f5 16. Ra2 Kd8 17. Ne2 Rb8 18. d4 Be8 19. Qc3 Ra8 20. g3 Ne7 21. dxe5 Bd7 22. f4 Rb8 23. a4 d4+ 24. Qxd4 cxd4+ 25. Kf3 Bg7 26. c5 a6 27. h4 Kc8 28. Bc1 fxe4+ 29. Kg2 Ra8 30. Rg1 Ng8 31. Bd2 Rb8 32. Kh1 Qb5 33. axb5 b6 34. Ra3 Bc6 35. Bh3+ Kb7 36. Rb3 Nf6 37. Rg2 Re8 38. Kh2 g4 39. bxa6+ Kc8 40. f5 Bf8 41. Bxg4 Ng8 42. Ng1 Ree7 43. Nh3 Rh8 44. Ng5 h5 45. f6+ Re6 46. Bf5 Kd7 47. Bc1 Nxf6 48. Nd2 b5 49. Bb2 Nh7 50. Bc1 Kc7 51. Rxb4 Bd7 52. Bxe4 Kd8 53. g4 Bg7 54. gxh5 Rg8 55. Nxh7 Bc8 56. Nf6 Ke7 57. Kh1 Bxa6 58. Bb2 Bc8 59. Ba3 Re8 60. Rxb5 Bh8 61. Kg1 Kd8 62. Kf1 Rf8 63. c6 Rg8 64. Rh2 Bd7 65. Bd5 Kc8 66. Rh3 Rg5 67. hxg5 Re7 68. Kg2 Re6 69. Bb4 Rxe5 70. Rg3 Re6 71. Bc5 Re7 72. Nde4 Re8 73. Kf2 Rg8 74. Kf1 Rd8 75. g6 Bxc6 76. Rg4 Bg7 77. h6 Bh8 78. g7 Re8 79. Kg1 Kd8 80. Bd6 Re7 81. Bc4 Rd7 82. Kg2 Bxb5 83. Kf2 Bxc4 84. Kg2 d3 85. Rg3 Re7 86. Kh1 Rd7 87. Rg4 Kc8 88. Nc3 Kd8 89. Bc5 Rd6 90. Ng8 Kc8 91. Bd4 Re6 92. Kg2 d2 93. Rh4 Bb3 94. Kf1 Kd8 95. Nd5 Kd7 96. Kg1 Kc6 97. Bc5 Kd7 98. Kg2 Ba4 99. Rh3 Kd8 100. Rg3 Kd7 1/2-1/2

@@ -1,0 +1,11 @@
+[Event "Self-Play Batch"]
+[Site "Local"]
+[Date "????.??.??"]
+[Round "?"]
+[White "FrixBot_Sim931"]
+[Black "FrixBot_Sim931"]
+[Result "0-1"]
+[Termination "CHECKMATE"]
+[PlyCount "30"]
+
+1. d3 b6 2. b4 e5 3. Nc3 h5 4. Rb1 Bb7 5. Kd2 Nf6 6. Nd5 Rh7 7. f3 b5 8. h3 Ne4+ 9. Ke3 a6 10. Qd2 Be7 11. a3 Qc8 12. Kxe4 d6 13. Qc3 c5 14. Rh2 c4 15. e3 f5# 0-1

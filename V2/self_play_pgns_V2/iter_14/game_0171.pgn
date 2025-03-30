@@ -1,0 +1,11 @@
+[Event "Self-Play Batch"]
+[Site "Local"]
+[Date "????.??.??"]
+[Round "?"]
+[White "FrixBot_Sim1012"]
+[Black "FrixBot_Sim1012"]
+[Result "1/2-1/2"]
+[Termination "THREEFOLD_REPETITION"]
+[PlyCount "136"]
+
+1. g4 f5 2. c4 d6 3. d4 e6 4. Nf3 Kf7 5. Kd2 Kg6 6. Kc2 Qe8 7. Be3 Qf7 8. Bd2 f4 9. Ne5+ Kg5 10. f3 Qf6 11. Bh3 h6 12. Bc3 Qg6+ 13. Kb3 a6 14. Bd2 c6 15. Qe1 d5 16. Bg2 Nf6 17. Qf1 Rh7 18. Bc1 b6 19. Nd2 dxc4+ 20. Kc3 Bb7 21. Rb1 Bc8 22. Qe1 Bb7 23. Qf1 h5 24. Qe1 h4 25. Qf1 Bc8 26. Qe1 Ne4+ 27. Nxe4+ Qxe4 28. Qf1 Bb7 29. Be3 Bc8 30. Bf2 Bb7 31. Bg1 Bc8 32. d5 Rh8 33. Rc1 Qxe5+ 34. Kd2 Qe4 35. Bh3 Kg6 36. Qg2 b5 37. Qf1 Rh7 38. Qg2 Rh6 39. Qf1 Rh5 40. Qg2 Qe5 41. Qf1 Qd4+ 42. Ke1 b4 43. Qg2 Ra7 44. Qf1 Rb7 45. Qg2 exd5 46. Rb1 Rc7 47. g5 Rd7 48. Rc1 Rd6 49. Qf2 Bd7 50. Bg4 Bc8 51. h3 Bd7 52. Qg3 Bc8 53. Bxh5+ Kxh5 54. Qg4+ Bxg4 55. a3 Qc3+ 56. Kf2 Be7 57. Rh2 Qb3 58. Rh1 Bd8 59. Ke1 d4 60. Kf2 Bf6 61. Rh2 a5 62. Rc2 Qc3 63. a4 Rd5 64. Rd2 g6 65. b3 Bg7 66. Rc2 Bf6 67. Rd2 Bg7 68. Rc2 Bf6 1/2-1/2

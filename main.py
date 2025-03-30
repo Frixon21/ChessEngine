@@ -6,7 +6,7 @@ import time
 
 from neural_network import ChessNet
 # from self_play import run_parallel_self_play
-from slef_play_batch import run_parallel_self_play_batch
+from self_play_batch import run_parallel_self_play_batch
 from train import train_network
 
 
@@ -53,7 +53,7 @@ if __name__ == "__main__":
     # --- Main Training Loop ---
     current_model_path = MODEL_CHECKPOINT
 
-    for iteration in range(8, NUM_ITERATIONS + 1):
+    for iteration in range(1, NUM_ITERATIONS + 1):
         print(f"\n===== ITERATION {iteration}/{NUM_ITERATIONS} =====")
 
         # --- Calculate MCTS simulations for this iteration ---
@@ -62,9 +62,9 @@ if __name__ == "__main__":
             current_mcts_simulations = INITIAL_MCTS_SIMULATIONS
         else:
             # Calculate the progress fraction (from 0.0 at iteration 1 to 1.0 at NUM_ITERATIONS)
-            progress = (iteration - 1) / max(1, NUM_ITERATIONS - 1)
+            # progress = (iteration - 1) / max(1, NUM_ITERATIONS - 1)
             # Interpolate linearly
-            sims = INITIAL_MCTS_SIMULATIONS + (MAX_MCTS_SIMULATIONS - INITIAL_MCTS_SIMULATIONS) * progress
+            sims = INITIAL_MCTS_SIMULATIONS + iteration * INFERENCE_BATCH_SIZE
             # Round to the nearest integer for the simulation count
             current_mcts_simulations = int(round(sims))
 

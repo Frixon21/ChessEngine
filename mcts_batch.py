@@ -3,10 +3,6 @@ import chess
 import math
 import numpy as np
 import torch
-import collections
-import time 
-import copy
-import random
 
 from board_encoder import board_to_tensor_torch # Use the torch version for efficiency
 from utils import move_to_index
@@ -16,8 +12,7 @@ from utils import move_to_index
 # Set this to True to enable the detailed printing when a repeating move is chosen
 DEBUG_PRINT_REPETITION_DETAILS = False
 DEBUG_PRINT_TOP_N_MOVES = 8 # How many top moves to show stats for
-
-
+VIRTUAL_LOSS_VALUE = 1.0
 
 def evaluate_terminal(board: chess.Board):
     """Checks if the board state is terminal and returns the score from White's perspective."""
@@ -41,6 +36,7 @@ class MCTSNode:
         self.value_sum = 0.0 # Accumulated value from simulations passing through here
         self.prior = prior # Prior probability from network (potentially noise-augmented at root)
         self._is_expanded = False # Flag to avoid redundant expansion checks
+        self.virtual_loss_count = 0
 
     def value(self) -> float:
         """Returns the average value of this node."""
@@ -64,21 +60,20 @@ class MCTSNode:
             if move not in self.children: # Defensive check
                 try:
                     move_idx = move_to_index(move)
-                    prior = policy_probs[move_idx]
-                    self.children[move] = MCTSNode(parent=self, move=move, prior=prior)
-                except IndexError:
-                     print(f"Error: move_to_index({move}) out of bounds for policy array (size {len(policy_probs)}).")
-                     # Skip this move or handle error appropriately
-                     continue
-                except Exception as e:
-                     print(f"Error creating child node for move {move}: {e}")
-                     continue # Skip problematic move
+                    if 0 <= move_idx < len(policy_probs):
+                         prior = policy_probs[move_idx]
+                         self.children[move] = MCTSNode(parent=self, move=move, prior=prior)
+                    else: print(f"Error expanding: move_to_index({move})={move_idx} out of bounds ({len(policy_probs)}). FEN: {board.fen()}")
+                except Exception as e: print(f"Error creating child {move}: {e}")
 
-    def select_child(self, c_puct: float) -> 'MCTSNode':
-        """Selects the child node with the highest UCT score."""
+    def select_child(self, c_puct: float, parent_N_eff: int) -> 'MCTSNode':
+        """
+        Selects the child node with the highest PUCT score,
+        incorporating virtual loss. Needs effective parent visit count.
+        """
         best_score = -float('inf')
         best_child = None
-        parent_sqrt_visits = math.sqrt(self.visits) # Cache sqrt
+        parent_sqrt_N_eff = math.sqrt(max(1, parent_N_eff))
 
         # --- UCT Calculation ---
         # Q(s,a): Average value for the child (action) from the child's perspective.
@@ -90,10 +85,20 @@ class MCTSNode:
         #         N(s,a): Visit count of the child (child.visits)
 
         for child in self.children.values():
-            prior_term = child.prior if child.prior > 0 else 1e-6 # Avoid math errors with zero prior
-            uct_explore = c_puct * prior_term * parent_sqrt_visits / (1 + child.visits)
-            uct_value = -child.value() # Value from parent's perspective
-            score = uct_value + uct_explore
+            N_real = child.visits
+            VLC = child.virtual_loss_count
+            N_eff = N_real + VLC
+
+            # Calculate effective Q value (penalized by virtual losses)
+            W_eff = child.value_sum - (VLC * VIRTUAL_LOSS_VALUE)
+            Q_eff = W_eff / N_eff if N_eff > 0 else 0.0
+
+            # Calculate exploration bonus using effective visits
+            prior_term = child.prior if child.prior > 0 else 1e-6
+            U_eff = c_puct * prior_term * parent_sqrt_N_eff / (1 + N_eff)
+
+            # Score from parent's perspective (Maximize -Q + U)
+            score = -Q_eff + U_eff
 
             if score > best_score:
                 best_score = score
@@ -101,17 +106,31 @@ class MCTSNode:
 
         return best_child
 
-    def backpropagate(self, value: float):
-        """Backpropagates the simulation result up the tree."""
+    def backpropagate(self, value: float, release_virtual_loss: bool):
+        """
+        Backpropagates the simulation result up the tree.
+        If release_virtual_loss is True, decrements virtual loss counts.
+        """
         node = self
         # The value needs to be flipped at each step as we go up,
         # representing the value from the perspective of the player whose turn it was at that node.
         current_value = value
         while node is not None:
+            # Decrement virtual loss if this path is releasing it
+            if release_virtual_loss:
+                if node.virtual_loss_count > 0:
+                    node.virtual_loss_count -= 1
+                # else: # Optional: Warn if trying to decrement below zero
+                #     if node.visits > 0: # Don't warn for root before first real visit?
+                #          print(f"Warning: Tried to decrement VL below zero for node {node.move}")
+
+            # Update real statistics
             node.visits += 1
             node.value_sum += current_value
+
+            # Prepare for parent
             node = node.parent
-            current_value *= -1.0 # Flip perspective for the parent
+            current_value *= -1.0 # Flip perspective
 
 # --- Main Batched MCTS Function ---
 
@@ -148,7 +167,6 @@ def run_simulations_batch(
 
     # --- Initial Network Call & Dirichlet Noise (Optional) ---
     initial_policy_probs = None
-    initial_value = 0.0
     root_legal_moves = list(root_board.legal_moves)
 
     if not root_legal_moves:
@@ -202,7 +220,6 @@ def run_simulations_batch(
     # --- Batch Simulation Loop ---
     pending_evaluations: list[tuple[MCTSNode, chess.Board]] = [] # Nodes waiting for NN eval
     completed_sims = 0
-    sim_attempts = 0
 
     while completed_sims < num_simulations:
         # 1. Start Selection Phase from Root
@@ -210,6 +227,11 @@ def run_simulations_batch(
         # Create a temporary board copy for this simulation path
         # Important: Use a copy that reflects the state *before* the MCTS simulation starts
         sim_board = root_board.copy()
+        path_taken = [current_node]
+        
+         # <<< Increment VL for root at start of path >>>
+        current_node.virtual_loss_count += 1
+        release_vl_for_this_path = True # Assume we need to release unless handled otherwise
 
         while current_node.is_expanded():
             # Check for terminal state along the path *before* selecting child
@@ -217,22 +239,31 @@ def run_simulations_batch(
             terminal_value = evaluate_terminal(sim_board)
             if terminal_value is not None:
                 # Found terminal state during selection -> backpropagate and end this sim path
-                current_node.backpropagate(terminal_value)
+                current_node.backpropagate(terminal_value, release_virtual_loss=True)
                 completed_sims += 1
                 current_node = None # Signal that this path is done
+                release_vl_for_this_path = False # VL already released by backprop
                 break # Exit inner while loop (selection phase)
+            
+            # Calculate effective parent visits for select_child
+            parent_N_eff = current_node.visits + current_node.virtual_loss_count
+            best_child = current_node.select_child(c_puct, parent_N_eff) # Pass effective N
 
             # Select best child using UCT
-            best_child = current_node.select_child(c_puct)
             if best_child is None:
                  print(f"Warning: select_child returned None despite node being expanded. FEN: {sim_board.fen()}")
                  # This might happen if all children have illegal moves somehow (should be rare)
                  # Treat as if we hit a leaf node that needs eval? Or backprop draw?
                  # Backpropagating draw might be safer.
-                 current_node.backpropagate(0.0) # Backpropagate draw value
+                 current_node.backpropagate(0.0, release_virtual_loss=True) # Backpropagate draw value
                  completed_sims += 1
                  current_node = None # Signal path done
+                 release_vl_for_this_path = False
                  break # Exit inner while loop
+             
+            # <<< Increment VL for chosen child before descending >>>
+            best_child.virtual_loss_count += 1
+            path_taken.append(best_child)
 
             # Move down the tree
             try:
@@ -242,9 +273,11 @@ def run_simulations_batch(
                  print(f"!!! Error pushing move {best_child.move.uci()} during selection: {e}")
                  print(f"    Board FEN before push: {sim_board.fen()}")
                  # Treat as sim failure? Backpropagate 0?
-                 current_node.backpropagate(0.0)
+                 dummy_leaf = path_taken[-1] # The node that failed to push
+                 dummy_leaf.backpropagate(0.0, release_virtual_loss=True) # Backpropagate draw value
                  completed_sims += 1
                  current_node = None # Signal path done
+                 release_vl_for_this_path = False # VL released
                  break # Exit inner while loop
 
         # If loop finished normally (didn't break early due to terminal/error)
@@ -253,13 +286,15 @@ def run_simulations_batch(
             terminal_value = evaluate_terminal(sim_board)
             if terminal_value is not None:
                 # Leaf node is actually terminal -> backpropagate
-                current_node.backpropagate(terminal_value)
+                current_node.backpropagate(terminal_value, release_virtual_loss=True)
                 completed_sims += 1
+                release_vl_for_this_path = False # VL released
             else:
                 # Leaf node needs expansion -> add to batch queue
                 # Pass the node and a *copy* of the board state *at that node*
                 pending_evaluations.append((current_node, sim_board.copy()))
-
+                release_vl_for_this_path = False 
+                
         # 2. Process Batch if Full or End of Simulations Reached
         # Check if we need to process the batch now
         # Process if:
@@ -270,12 +305,14 @@ def run_simulations_batch(
 
         if process_now:
             # Prepare batch tensor
-            states_to_evaluate = [item[1] for item in pending_evaluations] # Get board objects
-            # Convert boards to tensors efficiently
-            batch_tensors = torch.stack([board_to_tensor_torch(b, device) for b in states_to_evaluate])
+            states_to_evaluate = [item[1] for item in pending_evaluations] # Get board objects            
+            nodes_in_batch = [item[0] for item in pending_evaluations] # Keep track of nodes        
 
             # Run network inference
             try:
+                # Convert boards to tensors efficiently
+                batch_tensors = torch.stack([board_to_tensor_torch(b, device) for b in states_to_evaluate])
+                
                 with torch.no_grad(), torch.autocast(device_type=device.type, dtype=torch.float16, enabled=(device.type == 'cuda')):
                     policy_logits_batch, value_batch = network(batch_tensors)
                     policy_probs_batch_gpu = torch.softmax(policy_logits_batch, dim=1)
@@ -283,28 +320,24 @@ def run_simulations_batch(
                 policy_batch_cpu = policy_probs_batch_gpu.cpu().numpy()
                 value_batch_cpu = value_batch.cpu().numpy().squeeze(-1) # Ensure shape (batch_size,)
 
-                # Expand nodes and backpropagate results
-                for i, (node_to_expand, _) in enumerate(pending_evaluations):
-                    # Ensure the node wasn't somehow expanded concurrently (shouldn't happen in this model)
+                # Expand nodes and backpropagate results, releasing VL
+                for i, node_to_expand in enumerate(nodes_in_batch):
                     if not node_to_expand.is_expanded():
-                        # Use the board state that was saved with the node for expansion context
                         expansion_board_state = states_to_evaluate[i]
                         node_to_expand.expand(expansion_board_state, policy_batch_cpu[i])
 
-                    # Backpropagate the value estimated by the network
-                    node_to_expand.backpropagate(value_batch_cpu[i])
-                    completed_sims += 1 # Count simulation as completed after backpropagation
+                    # <<< Backpropagate NN value AND release virtual loss >>>
+                    node_to_expand.backpropagate(value_batch_cpu[i], release_virtual_loss=True)
+                    completed_sims += 1
 
             except Exception as e:
-                print(f"!!! Exception during batch network eval/backprop: {type(e).__name__}: {e}")
-                # How to recover? Maybe backpropagate 0 for all failed evals?
-                failed_count = len(pending_evaluations)
-                print(f"    Failed to evaluate batch of size {failed_count}. Backpropagating 0 for these.")
-                for node_to_fail, _ in pending_evaluations:
-                     # Avoid double-counting visits if backprop fails partially
-                     if node_to_fail.visits == 0: # Simple check, might not be perfect
-                         node_to_fail.backpropagate(0.0) # Backpropagate draw as fallback
-                         completed_sims += 1 # Still count as a completed sim attempt
+                print(f"!!! Batch Exc: {e}"); failed_count = len(pending_evaluations)
+                print(f"    Failed batch {failed_count}. Backprop 0 & release VL.")
+                # <<< Release VL even on error >>>
+                for node_to_fail in nodes_in_batch:
+                     # Backpropagate 0 and release VL for the failed path
+                     node_to_fail.backpropagate(0.0, release_virtual_loss=True)
+                     completed_sims += 1 # Still count sim attempt
                 # Continue to next simulation attempt
 
             # Clear the processed batch
@@ -372,7 +405,6 @@ def run_simulations_batch(
 
         # Option C: Keep original behaviour (first encountered) - This is what happens implicitly now
         # best_move = top_moves_with_max_visits[0] # (Equivalent to original max())
-
         
         
     

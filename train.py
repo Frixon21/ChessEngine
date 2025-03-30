@@ -7,6 +7,7 @@ from neural_network import ChessNet
 import math
 from tqdm import tqdm
 from torch.utils.data import Dataset
+from torch.amp import autocast, GradScaler
 
 class MemoryDataset(Dataset):
     def __init__(self, samples):
@@ -20,59 +21,90 @@ class MemoryDataset(Dataset):
         return len(self.samples)
 
     def __getitem__(self, idx):
-        board_tensor, target_policy, outcome = self.samples[idx]
-        board_tensor = torch.tensor(board_tensor, dtype=torch.float32)
-        target_policy = torch.tensor(target_policy, dtype=torch.float32)
-        outcome = torch.tensor(outcome, dtype=torch.float32)
-        return board_tensor, target_policy, outcome
+        board, policy, outcome = self.samples[idx]
+        return torch.tensor(board, dtype=torch.float32), \
+               torch.tensor(policy, dtype=torch.float32), \
+               torch.tensor(outcome, dtype=torch.float32)
+
 
 
 def train_network(data_source, num_epochs=10, batch_size=32, learning_rate=0.001, resume_from_checkpoint=None):  
 
     dataset = MemoryDataset(data_source)    
-    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=6)
+    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=0, pin_memory=True)
     
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Using {device} device")
-    
-    model = ChessNet().to(device)
+    print(f"Using {device} device")    
+     
+    model = ChessNet().to(device)    
     if resume_from_checkpoint is not None:
         print(f"Loading model weights from {resume_from_checkpoint}")
-        model.load_state_dict(torch.load(resume_from_checkpoint))
+        model.load_state_dict(torch.load(resume_from_checkpoint, map_location=device))
     
-    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+    optimizer = optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=1e-4) # Example with weight decay
+    
+    total_steps = len(dataloader) * num_epochs
+    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=total_steps, eta_min=1e-6) # eta_min prevents LR going to absolute zero
+
     mse_loss = nn.MSELoss()
     
-    total_batches = num_epochs * math.ceil(len(dataset) / batch_size)
-    pbar = tqdm(total=total_batches, desc="Overall Training Progress")
+    # <<< AMP: Initialize GradScaler >>>
+    # Creates gradient scaler for mixed precision. Enabled only if device is cuda.
+    scaler = GradScaler(enabled=(device.type == 'cuda'))
+        
+    total_batches_per_epoch = len(dataloader)
+    print(f"Starting training: {num_epochs} epochs, {total_batches_per_epoch} batches per epoch.")
+
     
     model.train()
     for epoch in range(num_epochs):
         running_loss = 0.0
-        batch_count = 0
-        for board_tensor, target_policy, target_value in dataloader:
-            board_tensor = board_tensor.to(device)
-            target_policy = target_policy.to(device)
-            target_value = target_value.to(device)
+        pbar = tqdm(enumerate(dataloader), total=total_batches_per_epoch, desc=f"Epoch {epoch+1}/{num_epochs}")
+        
+        for i, (board_tensor, target_policy, target_value) in pbar:
+            # Move data to device (non_blocking=True useful with pin_memory)
+            board_tensor = board_tensor.to(device, non_blocking=True)
+            target_policy = target_policy.to(device, non_blocking=True)
+            target_value = target_value.to(device, non_blocking=True)
             
-            optimizer.zero_grad()
+            optimizer.zero_grad(set_to_none=True) # More efficient zeroing
             policy_out, value_out = model(board_tensor)
             
-            log_policy = torch.log_softmax(policy_out, dim=1)
-            policy_loss = -(target_policy * log_policy).sum(dim=1).mean()
-            value_loss = mse_loss(value_out.squeeze(), target_value)
-            loss = policy_loss + value_loss
-            loss.backward()
-            optimizer.step()
+             # <<< AMP: Enable autocast context manager >>>
+            # Runs the forward pass under mixed precision
+            with autocast(enabled=(device.type == 'cuda')):
+                policy_out, value_out = model(board_tensor)
+                log_policy = torch.log_softmax(policy_out, dim=1)
+                policy_loss = -(target_policy * log_policy).sum(dim=1).mean()
+                # Ensure value_out is squeezed correctly for MSELoss
+                value_loss = mse_loss(value_out.squeeze(-1), target_value)
+                loss = policy_loss + value_loss
+                
+            # <<< AMP: Scale loss and call backward >>>
+            # scaler.scale multiplies the loss by the scale factor
+            scaler.scale(loss).backward()
             
+            # Optional: Gradient Clipping (uncomment if gradients explode)
+            # scaler.unscale_(optimizer) # Unscales gradients before clipping
+            # torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+
+            # <<< AMP: Scaler step and update >>>
+            # scaler.step examines gradients and updates weights if no NaNs/Infs
+            scaler.step(optimizer)
+            # scaler.update updates the scale factor for the next iteration
+            scaler.update()
+            
+            # <<< Scheduler: Step per BATCH (after optimizer step) >>>
+            scheduler.step()
+                        
             running_loss += loss.item()
-            batch_count += 1
-            pbar.update(1)
+            pbar.set_postfix(loss=running_loss / (i + 1))
+
             
-        avg_loss = running_loss / batch_count if batch_count > 0 else 0
-        print(f"Epoch {epoch+1}/{num_epochs}, Loss: {avg_loss:.4f}")
+        avg_loss = running_loss / total_batches_per_epoch
+        current_lr = scheduler.get_last_lr()[0] # Get current learning rate
+        print(f"Epoch {epoch+1}/{num_epochs} finished. Avg Loss: {avg_loss:.4f}, LR: {current_lr:.6f}")
     
-    pbar.close()
     checkpoint_path = "trained_model.pth"
     torch.save(model.state_dict(), checkpoint_path)
     print(f"Training complete, model saved as {checkpoint_path}")
