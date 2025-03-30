@@ -4,10 +4,20 @@ import math
 import numpy as np
 import torch
 import collections
-import time # For potential debugging/timeouts
+import time 
+import copy
+import random
 
 from board_encoder import board_to_tensor_torch # Use the torch version for efficiency
 from utils import move_to_index
+
+
+# --- Constants ---
+# Set this to True to enable the detailed printing when a repeating move is chosen
+DEBUG_PRINT_REPETITION_DETAILS = False
+DEBUG_PRINT_TOP_N_MOVES = 8 # How many top moves to show stats for
+
+
 
 def evaluate_terminal(board: chess.Board):
     """Checks if the board state is terminal and returns the score from White's perspective."""
@@ -330,7 +340,95 @@ def run_simulations_batch(
 
     # Find best move among the valid children based on visit count
     # Using child.visits directly is standard (robust selection)
-    best_move = max(valid_children, key=lambda move: valid_children[move].visits)
+    # best_move = max(valid_children, key=lambda move: valid_children[move].visits)
+    
+    
+    # --- More Robust Move Selection ---
+    # 1. Find the maximum visit count
+    max_visits = -1
+    for child in valid_children.values():
+        if child.visits > max_visits:
+            max_visits = child.visits
+
+    # 2. Collect all moves that achieved the maximum visit count
+    top_moves_with_max_visits = []
+    for move, child in valid_children.items():
+        if child.visits == max_visits:
+            top_moves_with_max_visits.append(move)
+
+    # 3. Choose the best move among the ties
+    if len(top_moves_with_max_visits) == 1:
+        # No tie, the choice is clear
+        best_move = top_moves_with_max_visits[0]
+    elif top_moves_with_max_visits:
+        # --- Tie-breaking ---
+        
+        # Option A: Break ties using Q-value (choose move with highest Q among ties)
+        # best_move = max(top_moves_with_max_visits, key=lambda move: valid_children[move].value()) # Note: Use child.value() directly
+
+        # Option B: Randomly choose among tied top moves (simple, promotes diversity)
+        import random
+        best_move = random.choice(top_moves_with_max_visits)
+
+        # Option C: Keep original behaviour (first encountered) - This is what happens implicitly now
+        # best_move = top_moves_with_max_visits[0] # (Equivalent to original max())
+
+        
+        
+    
+      # ======================================================================== #
+    # <<< INSERT DEBUGGING CHECKPOINT HERE >>>                                 #
+    # This block runs *after* all simulations are complete and the             #
+    # best_move (by visits) has been determined, but *before* returning.       #
+    # ======================================================================== #
+    if DEBUG_PRINT_REPETITION_DETAILS:
+        move_stats = []
+        parent_total_visits = max(1, root_node.visits) # Avoid division by zero
+        parent_sqrt_visits = math.sqrt(parent_total_visits)
+
+        for move, child in valid_children.items():
+            is_repeating_draw = False
+            try:
+                board_copy = root_board.copy()
+                board_copy.push(move)
+                is_repeating_draw = board_copy.can_claim_draw() # Check if *this specific move* enables a draw claim
+            except Exception as e:
+                print(f"Debug Check Error: Pushing {move.uci()} failed: {e}")
+
+            Q = -child.value() # Value from parent's perspective
+            N = child.visits
+            P = child.prior
+            if N == 0: U = c_puct * P * parent_sqrt_visits
+            else: U = c_puct * P * parent_sqrt_visits / (1 + N)
+            PUCT = Q + U
+
+            move_stats.append({
+                "Move": move.uci(), "N": N, "Q": Q, "P": P, "U": U, "PUCT": PUCT, "Repeats?": is_repeating_draw
+            })
+
+        move_stats.sort(key=lambda x: x["N"], reverse=True)
+
+        chosen_move_repeats = False
+        for stats in move_stats:
+            if stats["Move"] == best_move.uci():
+                chosen_move_repeats = stats["Repeats?"]
+                break
+
+        # --- Print only if the chosen move leads to repetition draw ---
+        if chosen_move_repeats:
+            print(f"\n--- MCTS DEBUG (Repetition Choice) | FEN: {root_board.fen()} ---")
+            print(f"Chosen Move: {best_move.uci()} (Leads to drawable repetition)")
+            print(f"Root Node Visits: {root_node.visits}")
+            print("-" * 80)
+            print(f"{'Move':<10} {'N':<8} {'Q':<10} {'P':<10} {'U':<10} {'PUCT':<10} {'Repeats?':<10}")
+            print("-" * 80)
+            for i, stats in enumerate(move_stats):
+                if i >= DEBUG_PRINT_TOP_N_MOVES: break
+                print(f"{stats['Move']:<10} {stats['N']:<8} {stats['Q']:<10.4f} {stats['P']:<10.4f} {stats['U']:<10.4f} {stats['PUCT']:<10.4f} {stats['Repeats?']:<10}")
+            print("-" * 80)
+    # <<< END DEBUGGING BLOCK >>>
+    # ======================================================================== #
+    
 
     if return_visit_distribution:
         # Return distribution based only on valid children considered for best_move

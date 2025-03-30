@@ -53,7 +53,7 @@ if __name__ == "__main__":
     # --- Main Training Loop ---
     current_model_path = MODEL_CHECKPOINT
 
-    for iteration in range(1, NUM_ITERATIONS + 1):
+    for iteration in range(8, NUM_ITERATIONS + 1):
         print(f"\n===== ITERATION {iteration}/{NUM_ITERATIONS} =====")
 
         # --- Calculate MCTS simulations for this iteration ---

@@ -1,0 +1,11 @@
+[Event "Self-Play Batch"]
+[Site "Local"]
+[Date "????.??.??"]
+[Round "?"]
+[White "FrixBot_Sim865"]
+[Black "FrixBot_Sim865"]
+[Result "1/2-1/2"]
+[Termination "THREEFOLD_REPETITION"]
+[PlyCount "42"]
+
+1. e4 Nh6 2. Nh3 g6 3. f4 c6 4. Nc3 f5 5. Rg1 b5 6. Kf2 Ng4+ 7. Ke2 a5 8. Ng5 Bb7 9. Rb1 Ra7 10. a4 e5 11. Nxb5 Ke7 12. h3 h6 13. b3 d6 14. g3 c5 15. d3 Qc7 16. Nh7 Rg8 17. Nxf8 Rh8 18. Nxc7 Rg8 19. Nh7 Rh8 20. Nf8 Rg8 21. Nh7 Rh8 1/2-1/2

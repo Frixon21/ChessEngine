@@ -20,7 +20,7 @@ from utils import move_to_index
 TEMPERATURE = 1.0
 TEMP_THRESHOLD_MOVES = 30 # Number of *plies* (half-moves)
 MAX_GAME_MOVES = 200 # Max plies before declaring draw (avoids infinite games)
-DRAW_SCORE = -0.1 # Score for draws (1/2-1/2)
+DRAW_SCORE = -0.2 # Score for draws (1/2-1/2)
 
 
 def self_play_game_batch(model_path: str, mcts_simulations: int, inference_batch_size: int):
@@ -75,7 +75,7 @@ def self_play_game_batch(model_path: str, mcts_simulations: int, inference_batch
             break
         
         if board.ply() >= MAX_GAME_MOVES:
-            print(f"DEBUG: Game reached max moves ({MAX_GAME_MOVES}).")
+            # print(f"DEBUG: Game reached max moves ({MAX_GAME_MOVES}).")
             max_moves_reached = True
             break # End game as draw
 
@@ -210,11 +210,9 @@ def self_play_game_batch(model_path: str, mcts_simulations: int, inference_batch
 
 
     # --- Post-Game Processing: Assign Outcome and Create Training Samples ---
-    if final_result_str == "1-0": outcome = 1.0  # White wins
-    elif final_result_str == "0-1": outcome = -1.0 # Black wins
-    elif final_result_str == "1/2-1/2": outcome = DRAW_SCORE # Draw ("1/2-1/2", "*", length limit)
-    else: # Handle '*' or other unexpected results
-        outcome = 0.0 # Treat errors/unknowns as neutral for training
+    if final_result_str == "1-0": outcome_for_white  = 1.0  # White wins
+    elif final_result_str == "0-1": outcome_for_white  = -1.0 # Black wins
+
 
     training_samples = []
     network_output_size = network.policy_fc.out_features
@@ -225,6 +223,21 @@ def self_play_game_batch(model_path: str, mcts_simulations: int, inference_batch
         # If i=0 (first move), board_tensor is initial state, White to move -> perspective = 1.0
         # If i=1, Black to move -> perspective = -1.0
         perspective = 1.0 if (i % 2) == 0 else -1.0
+        
+        # --- Calculate the TARGET VALUE for this specific sample ---
+        target_value = 0.0 # Default for errors/unknowns
+
+        if final_result_str == "1-0":
+            # If White won, target is 1.0 if perspective is White, -1.0 if Black
+            target_value = outcome_for_white * perspective
+        elif final_result_str == "0-1":
+            # If Black won (White lost), target is -1.0 if perspective is White, 1.0 if Black
+            target_value = outcome_for_white * perspective
+        elif final_result_str == "1/2-1/2":
+            # If DRAW, the target is ALWAYS the penalized score, regardless of perspective
+            target_value = DRAW_SCORE
+        # else: target_value remains 0.0 for '*' results
+
 
         # Create the target policy vector
         target_policy_np = np.zeros(network_output_size, dtype=np.float32)
@@ -247,9 +260,8 @@ def self_play_game_batch(model_path: str, mcts_simulations: int, inference_batch
                          continue
         # Else: target_policy remains all zeros if distribution was empty/invalid
 
-        # Append sample: (state, policy_target, final_outcome_for_player_at_this_state)
-        # outcome * perspective gives the game result from the view of the player whose turn it was
-        training_samples.append((board_tensor_np, target_policy_np, outcome * perspective))
+        # --- Append the sample with the correctly calculated target_value ---
+        training_samples.append((board_tensor_np, target_policy_np, target_value))
 
     # --- Convert PGN game object to string ---
     pgn_string = str(game) # Generate the PGN string representation
