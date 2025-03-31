@@ -13,7 +13,12 @@ from train import train_network
 
 # --- Configuration ---
 NUM_ITERATIONS = 50         # Total training iterations (self-play + train)
-GAMES_PER_ITERATION = 256   # Number of games generated in each self-play phase (adjust based on time/memory)
+# GAMES_PER_ITERATION =128   # Number of games generated in each self-play phase (adjust based on time/memory)
+
+TARGET_GAMES_PER_ITERATION = 256
+GAMES_RAMP_UP_ITERATIONS = 10 # Reach target games by iteration 10
+INITIAL_GAMES_PER_ITERATION = 128 # Start with fewer games
+
 EPOCHS_PER_ITERATION = 2    # Number of training epochs on the data from one iteration
 BATCH_SIZE = 256            # Training batch size (adjust based on GPU memory)
 LEARNING_RATE = 0.001       # Training learning rate
@@ -23,7 +28,6 @@ INFERENCE_BATCH_SIZE = 32   # Batch size for inference during self-play (adjust 
 # --- Dynamic MCTS Simulation Settings ---
 INITIAL_MCTS_SIMULATIONS = 800  # Starting number of simulations
 MAX_MCTS_SIMULATIONS = 1600   # Target maximum simulations by the end
-# MCTS_SIMULATIONS = 50 # <--- Remove or comment out the old static value
 
 MODEL_CHECKPOINT = "trained_model.pth" # Path to save/load the model
 PGNS_TO_SAVE_PER_ITERATION = 10 # Save the first 10 games each iteration
@@ -61,24 +65,31 @@ if __name__ == "__main__":
         if NUM_ITERATIONS <= 1:
             current_mcts_simulations = INITIAL_MCTS_SIMULATIONS
         else:
-            # Calculate the progress fraction (from 0.0 at iteration 1 to 1.0 at NUM_ITERATIONS)
-            # progress = (iteration - 1) / max(1, NUM_ITERATIONS - 1)
             # Interpolate linearly
             sims = INITIAL_MCTS_SIMULATIONS + iteration * INFERENCE_BATCH_SIZE
-            # Round to the nearest integer for the simulation count
             current_mcts_simulations = int(round(sims))
 
         # Ensure we don't accidentally go below initial or above max due to rounding/edge cases
         current_mcts_simulations = max(INITIAL_MCTS_SIMULATIONS, min(MAX_MCTS_SIMULATIONS, current_mcts_simulations))
 
         print(f"Using {current_mcts_simulations} MCTS simulations for self-play this iteration.")
+        
+        if iteration >= GAMES_RAMP_UP_ITERATIONS:
+            current_games_this_iteration = TARGET_GAMES_PER_ITERATION            
+        else:
+            # Linear ramp-up from INITIAL to TARGET games
+            progress = max(0, iteration - 1) / max(1, GAMES_RAMP_UP_ITERATIONS - 1)
+            games = INITIAL_GAMES_PER_ITERATION + (TARGET_GAMES_PER_ITERATION - INITIAL_GAMES_PER_ITERATION) * progress
+            current_games_this_iteration = int(round(games))
+            # Ensure it's at least the initial value
+            current_games_this_iteration = max(INITIAL_GAMES_PER_ITERATION, current_games_this_iteration)
 
         # --- Step 1: Self-Play Data Generation ---
-        print(f"Starting self-play phase ({GAMES_PER_ITERATION} games)...")
+        print(f"Starting self-play phase ({current_games_this_iteration} games)...")
         start_time = time.time()
 
         samples, game_results, game_lengths = run_parallel_self_play_batch(
-            num_games=GAMES_PER_ITERATION,
+            num_games=current_games_this_iteration,
             model_path=current_model_path,
             num_workers=NUM_WORKERS,
             mcts_simulations=current_mcts_simulations,

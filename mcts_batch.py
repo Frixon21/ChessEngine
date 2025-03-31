@@ -202,6 +202,7 @@ def run_simulations_batch(
 
     except Exception as e:
         print(f"!!! Exception during initial network eval/expansion: {type(e).__name__}: {e}")
+        print(f"    ERROR FEN (Initial Eval): {root_board.fen()}")
         print(f"    Root FEN: {root_board.fen()}")
         # Fallback: Expand with uniform priors if network fails initially?
         if not root_node.is_expanded():
@@ -331,6 +332,21 @@ def run_simulations_batch(
                     completed_sims += 1
 
             except Exception as e:
+                print(f"!!! Batch Exc: {e}")
+                # <<< Add FEN Print (needs care - might error on multiple boards) >>>
+                # Print FENs of boards in the *failed* batch if possible
+                fen_list_str = "Could not retrieve FENs"
+                try:
+                    # Only print first few FENs to avoid spamming
+                    max_fen_print = 5
+                    fen_list = [b.fen() for b in states_to_evaluate[:max_fen_print]]
+                    fen_list_str = "; ".join(fen_list)
+                    if len(states_to_evaluate) > max_fen_print:
+                        fen_list_str += "..."
+                except Exception as fen_e:
+                    print(f"  (Error getting FENs for debug: {fen_e})")
+                print(f"    ERROR FENs (Batch Eval): {fen_list_str}")
+                # <<< End Add FEN Print >>>
                 print(f"!!! Batch Exc: {e}"); failed_count = len(pending_evaluations)
                 print(f"    Failed batch {failed_count}. Backprop 0 & release VL.")
                 # <<< Release VL even on error >>>

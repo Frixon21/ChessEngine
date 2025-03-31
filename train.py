@@ -72,7 +72,7 @@ def train_network(data_source, num_epochs=10, batch_size=32, learning_rate=0.001
             
              # <<< AMP: Enable autocast context manager >>>
             # Runs the forward pass under mixed precision
-            with autocast(enabled=(device.type == 'cuda')):
+            with autocast(device_type=device.type, dtype=torch.float16, enabled=(device.type == 'cuda')):
                 policy_out, value_out = model(board_tensor)
                 log_policy = torch.log_softmax(policy_out, dim=1)
                 policy_loss = -(target_policy * log_policy).sum(dim=1).mean()
