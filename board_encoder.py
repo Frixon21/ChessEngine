@@ -117,5 +117,5 @@ def board_to_tensor_torch(board: chess.Board, device="cpu") -> torch.Tensor:
         row = chess.square_rank(board.ep_square); col = chess.square_file(board.ep_square); arr[21, row, col] = 1.0
 
     # Convert the final numpy array to a tensor
-    tensor = torch.from_numpy(arr)
+    tensor = torch.from_numpy(arr).contiguous()
     return tensor.to(device, non_blocking=True)

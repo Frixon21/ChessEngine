@@ -8,6 +8,7 @@ import math
 from tqdm import tqdm
 from torch.utils.data import Dataset
 from torch.amp import autocast, GradScaler
+# from torch.cuda.amp import autocast, GradScaler
 
 class MemoryDataset(Dataset):
     def __init__(self, samples):
@@ -72,7 +73,7 @@ def train_network(data_source, num_epochs=10, batch_size=32, learning_rate=0.001
             
              # <<< AMP: Enable autocast context manager >>>
             # Runs the forward pass under mixed precision
-            with autocast(device_type=device.type, dtype=torch.float16, enabled=(device.type == 'cuda')):
+            with autocast(dtype=torch.float16, enabled=(device.type == 'cuda')):
                 policy_out, value_out = model(board_tensor)
                 log_policy = torch.log_softmax(policy_out, dim=1)
                 policy_loss = -(target_policy * log_policy).sum(dim=1).mean()

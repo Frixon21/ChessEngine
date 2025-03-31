@@ -20,7 +20,7 @@ from utils import move_to_index
 TEMPERATURE = 1.0
 TEMP_THRESHOLD_MOVES = 30 # Number of *plies* (half-moves)
 MAX_GAME_MOVES = 200 # Max plies before declaring draw (avoids infinite games)
-DRAW_SCORE = -0.1 # Score for draws (1/2-1/2)
+DRAW_SCORE = 0.0 # Score for draws (1/2-1/2)
 
 
 def self_play_game_batch(model_path: str, mcts_simulations: int, inference_batch_size: int):
@@ -90,7 +90,7 @@ def self_play_game_batch(model_path: str, mcts_simulations: int, inference_batch
             inference_batch_size=inference_batch_size,
             device=device,
             return_visit_distribution=True,
-            c_puct=2.0,
+            c_puct=1.25,
         )
 
         selected_move = None # Move actually played
@@ -277,6 +277,7 @@ def self_play_game_worker(args):
     model_path, mcts_simulations, inference_batch_size, worker_id = args
     # print(f"Worker {worker_id} started.") # Debug
     try:
+        torch.cuda.empty_cache()
         result_tuple = self_play_game_batch(model_path, mcts_simulations, inference_batch_size)
         return result_tuple # Return the full tuple (samples, result, length, pgn_string)
     

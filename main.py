@@ -5,10 +5,12 @@ import torch.multiprocessing as mp
 import time
 
 from neural_network import ChessNet
-# from self_play import run_parallel_self_play
+#from self_play import run_parallel_self_play
 from self_play_batch import run_parallel_self_play_batch
+
 from train import train_network
 
+#os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
 
 
 # --- Configuration ---
@@ -17,20 +19,20 @@ NUM_ITERATIONS = 50         # Total training iterations (self-play + train)
 
 TARGET_GAMES_PER_ITERATION = 256
 GAMES_RAMP_UP_ITERATIONS = 10 # Reach target games by iteration 10
-INITIAL_GAMES_PER_ITERATION = 128 # Start with fewer games
+INITIAL_GAMES_PER_ITERATION = 100 # Start with fewer games
 
 EPOCHS_PER_ITERATION = 2    # Number of training epochs on the data from one iteration
 BATCH_SIZE = 256            # Training batch size (adjust based on GPU memory)
 LEARNING_RATE = 0.001       # Training learning rate
-NUM_WORKERS = 5             # Number of parallel workers for self-play (adjust based on CPU cores/GPU)
+NUM_WORKERS = 5            # Number of parallel workers for self-play (adjust based on CPU cores/GPU)
 INFERENCE_BATCH_SIZE = 32   # Batch size for inference during self-play (adjust based on GPU memory)
 
 # --- Dynamic MCTS Simulation Settings ---
-INITIAL_MCTS_SIMULATIONS = 800  # Starting number of simulations
+INITIAL_MCTS_SIMULATIONS = 64  # Starting number of simulations
 MAX_MCTS_SIMULATIONS = 1600   # Target maximum simulations by the end
 
 MODEL_CHECKPOINT = "trained_model.pth" # Path to save/load the model
-PGNS_TO_SAVE_PER_ITERATION = 10 # Save the first 10 games each iteration
+PGNS_TO_SAVE_PER_ITERATION = 1 # Save the first 10 games each iteration
 
 if __name__ == "__main__":
 
@@ -112,7 +114,7 @@ if __name__ == "__main__":
             draw_rate = (num_draws / num_games_completed) * 100
             avg_game_length = sum(game_lengths) / num_games_completed if game_lengths else 0
 
-            print(f"Self-play finished. Completed {num_games_completed}/{GAMES_PER_ITERATION} games.")
+            print(f"Self-play finished. Completed {num_games_completed}/{current_games_this_iteration} games.")
             print(f"  Results: White Wins={num_white_wins}, Black Wins={num_black_wins}, Draws={num_draws}, Other={num_other_results}")
             print(f"  Draw Rate: {draw_rate:.2f}%")
             print(f"  Average Game Length: {avg_game_length:.2f} moves (plies)")

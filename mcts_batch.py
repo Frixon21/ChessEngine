@@ -141,8 +141,8 @@ def run_simulations_batch(
     inference_batch_size: int,
     device: torch.device,
     c_puct: float = 1.0,
-    dirichlet_alpha: float = 0.3,
-    dirichlet_epsilon: float = 0.25,
+    dirichlet_alpha: float = 0.0,#0.3 Crashes if enabled????
+    dirichlet_epsilon: float = 0.0,#0.35
     return_visit_distribution: bool = False
 ):
     """
@@ -313,6 +313,7 @@ def run_simulations_batch(
             try:
                 # Convert boards to tensors efficiently
                 batch_tensors = torch.stack([board_to_tensor_torch(b, device) for b in states_to_evaluate])
+                batch_tensors = batch_tensors.contiguous().float().to(device)
                 
                 with torch.no_grad(), torch.autocast(device_type=device.type, dtype=torch.float16, enabled=(device.type == 'cuda')):
                     policy_logits_batch, value_batch = network(batch_tensors)
@@ -424,8 +425,7 @@ def run_simulations_batch(
         
         
     
-      # ======================================================================== #
-    # <<< INSERT DEBUGGING CHECKPOINT HERE >>>                                 #
+    # ======================================================================== #
     # This block runs *after* all simulations are complete and the             #
     # best_move (by visits) has been determined, but *before* returning.       #
     # ======================================================================== #
