@@ -44,7 +44,8 @@ def train_network(data_source, num_epochs=10, batch_size=32, learning_rate=0.001
     
     optimizer = optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=1e-4) # Example with weight decay
     
-    total_steps = len(dataloader) * num_epochs
+    hypothetical_total_epochs = 10
+    total_steps = len(dataloader) * hypothetical_total_epochs
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=total_steps, eta_min=1e-6) # eta_min prevents LR going to absolute zero
 
     mse_loss = nn.MSELoss()
@@ -69,11 +70,10 @@ def train_network(data_source, num_epochs=10, batch_size=32, learning_rate=0.001
             target_value = target_value.to(device, non_blocking=True)
             
             optimizer.zero_grad(set_to_none=True) # More efficient zeroing
-            policy_out, value_out = model(board_tensor)
             
-             # <<< AMP: Enable autocast context manager >>>
+            # <<< AMP: Enable autocast context manager >>>
             # Runs the forward pass under mixed precision
-            with autocast(dtype=torch.float16, enabled=(device.type == 'cuda')):
+            with autocast(device_type=device.type, dtype=torch.float16, enabled=(device.type == 'cuda')):
                 policy_out, value_out = model(board_tensor)
                 log_policy = torch.log_softmax(policy_out, dim=1)
                 policy_loss = -(target_policy * log_policy).sum(dim=1).mean()

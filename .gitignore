@@ -5,3 +5,6 @@ cpu_env/
 dist/
 Games/
 old/
+test.py
+self_play_pgns/
+stockfish/
