@@ -19,9 +19,8 @@ from utils import move_to_index # Still needed for MCTS internal expansion if us
 
 # --- Configuration (can be moved to main config if preferred) ---
 TEMPERATURE = 1.0
-TEMP_THRESHOLD_MOVES = 30 # Number of *plies* (half-moves)
+TEMP_THRESHOLD_MOVES = 20 # Number of *plies* (half-moves)
 MAX_GAME_MOVES = 200 # Max plies before declaring draw (avoids infinite games)
-# DRAW_SCORE = 0.0 # Not needed in this function anymore
 
 def self_play_game_batch(model_path: str, mcts_simulations: int, inference_batch_size: int):
     """
@@ -37,17 +36,18 @@ def self_play_game_batch(model_path: str, mcts_simulations: int, inference_batch
     """
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    network = ChessNet()
+    network = None # Initialize
     try:
-        network.load_state_dict(torch.load(model_path, map_location='cpu'))
-        network.to(device)
+        # print(f"Loading TorchScript model from {model_path}...") 
+        network = torch.jit.load(model_path, map_location=device)
+        network.to(device) # Ensure it's on the correct device
         network.eval()
-    except FileNotFoundError:
-        print(f"Error: Model file not found at {model_path}")
-        return [], "*", 0, ""
+        # print("TorchScript model loaded successfully.") 
     except Exception as e:
-        print(f"Error loading model {model_path} in worker: {e}")
-        return [], "*", 0, ""
+        print(f"Error loading TorchScript model {model_path}: {e}")
+        # Handle error - maybe try loading the standard .pth file as fallback?
+        # Or return error immediately
+        return [], "*", 0, "" # Example error return
 
     board = chess.Board()
     position_data = []
@@ -79,13 +79,13 @@ def self_play_game_batch(model_path: str, mcts_simulations: int, inference_batch
         # --- Run MCTS to decide the move ---
         # <<< FIX #1: Correctly assign single return value >>>
         # When return_visit_distribution=False, it returns only the best move
-        best_move_mcts = run_simulations_batch(
+        best_move_mcts, visit_distribution = run_simulations_batch(
             board,
             network,
             num_simulations=mcts_simulations,
             inference_batch_size=inference_batch_size,
             device=device,
-            return_visit_distribution=False, # Set to False
+            return_visit_distribution=True,
             c_puct=1.25,
             dirichlet_alpha=0.3,
             dirichlet_epsilon=0.25
@@ -103,45 +103,35 @@ def self_play_game_batch(model_path: str, mcts_simulations: int, inference_batch
                 print(f"Warning: No legal moves found after MCTS fail/None. FEN: {board.fen()}. Ending game.")
                 outcome_obj = board.outcome(claim_draw=True)
                 break
-        elif board.ply() < TEMP_THRESHOLD_MOVES: # Temperature sampling phase
+        elif board.ply() < TEMP_THRESHOLD_MOVES and TEMPERATURE > 0: # Temperature sampling phase
              # Need visit distribution for sampling, so run MCTS again requesting distribution
-             # <<< FIX #2: Correctly unpack BOTH move and distribution >>>
              # When return_visit_distribution=True, it returns (best_move, distribution)
-             best_move_for_sampling, visit_distribution_for_sampling = run_simulations_batch(
-                 board, network, mcts_simulations, inference_batch_size, device,
-                 return_visit_distribution=True, # Set to True
-                 c_puct=1.25, dirichlet_alpha=0.3, dirichlet_epsilon=0.25
-             )
 
-             if visit_distribution_for_sampling: # Check if distribution was returned
-                 moves = list(visit_distribution_for_sampling.keys())
+             if visit_distribution: # Check if distribution was returned
+                 moves = list(visit_distribution.keys())
                  valid_moves = [m for m in moves if isinstance(m, chess.Move)]
                  if valid_moves:
-                     visits = np.array([visit_distribution_for_sampling.get(m, 0) for m in valid_moves], dtype=np.float32)
-                     visits = np.maximum(visits, 1e-9)
-                     if TEMPERATURE == 0:
-                          # If temp is 0, use the best move determined by MCTS directly
-                          selected_move = best_move_for_sampling if best_move_for_sampling in valid_moves else max(valid_moves, key=lambda m: visit_distribution_for_sampling.get(m, 0))
-                     elif TEMPERATURE == 1.0: probabilities = visits / np.sum(visits)
-                     else: visit_powers = visits**(1.0 / TEMPERATURE); probabilities = visit_powers / np.sum(visit_powers)
+                    visits = np.array([visit_distribution.get(m, 0) for m in valid_moves], dtype=np.float32)
+                    visits = np.maximum(visits, 1e-9)
+                    if TEMPERATURE == 1.0: probabilities = visits / np.sum(visits)
+                    else: visit_powers = visits**(1.0 / TEMPERATURE); probabilities = visit_powers / np.sum(visit_powers)
 
-                     if TEMPERATURE > 0: # Perform sampling if temperature > 0
-                         probabilities /= np.sum(probabilities) # Renormalize
-                         if not (np.isnan(probabilities).any() or np.isinf(probabilities).any() or not np.isclose(np.sum(probabilities), 1.0)):
-                             try: selected_move = np.random.choice(valid_moves, p=probabilities)
-                             except ValueError as ve:
-                                 print(f"Sampling Error: {ve}. Using MCTS best move.");
-                                 # Fallback to MCTS best move if sampling fails
-                                 selected_move = best_move_for_sampling if best_move_for_sampling in valid_moves else max(valid_moves, key=lambda m: visit_distribution_for_sampling.get(m, 0))
-                         else:
-                             print(f"Warning: Invalid probabilities. Using MCTS best move.");
-                             selected_move = best_move_for_sampling if best_move_for_sampling in valid_moves else max(valid_moves, key=lambda m: visit_distribution_for_sampling.get(m, 0))
+                    probabilities /= np.sum(probabilities) # Renormalize
+                    if not (np.isnan(probabilities).any() or np.isinf(probabilities).any() or not np.isclose(np.sum(probabilities), 1.0)):
+                        try: selected_move = np.random.choice(valid_moves, p=probabilities)
+                        except ValueError as ve:
+                            print(f"Sampling Error: {ve}. Using MCTS best move.");
+                            # Fallback to MCTS best move if sampling fails
+                            selected_move = best_move_mcts if best_move_mcts in valid_moves else max(valid_moves, key=lambda m: visit_distribution.get(m, 0))
+                    else:
+                        print(f"Warning: Invalid probabilities. Using MCTS best move.");
+                        selected_move = best_move_mcts if best_move_mcts in valid_moves else max(valid_moves, key=lambda m: visit_distribution.get(m, 0))
                  else: # No valid moves in distribution
                       print(f"Warning: No valid moves in sampling distribution. Fallback random."); legal_moves = list(board.legal_moves); selected_move = np.random.choice(legal_moves) if legal_moves else None
              else: # MCTS failed to return distribution for sampling
                  print(f"Warning: MCTS failed to return distribution for sampling. Fallback random."); legal_moves = list(board.legal_moves); selected_move = np.random.choice(legal_moves) if legal_moves else None
 
-        else: # Greedy phase
+        else: # Greedy phase (ply >= threshold or TEMPERATURE == 0)
             # Use the best move already determined by the first MCTS call
             selected_move = best_move_mcts
 
@@ -205,7 +195,6 @@ def self_play_game_worker(args):
         print(traceback.format_exc())
         return [], "*", 0, "" # Return empty position data
 
-
 def run_parallel_self_play_batch(
     num_games: int,
     model_path: str,
@@ -246,10 +235,15 @@ def run_parallel_self_play_batch(
             pool.join()
         print("Gathering results from workers...")
         results = []
-        for i, async_res in enumerate(tqdm(results_async, desc="Processing Results")):
-            try: results.append(async_res.get(timeout=300))
-            except mp.TimeoutError: print(f"Warning: Timeout worker {i}."); results.append(([], "*", 0, ""))
-            except Exception as e: print(f"\n!!! Error worker {i}: {e}"); results.append(([], "*", 0, ""))
+        for i, async_res in enumerate(results_async):
+            try:
+                results.append(async_res.get(timeout=300))
+            except mp.TimeoutError:
+                print(f"Warning: Timeout getting result from worker for game index {i}.")
+                results.append(([], "*", 0, ""))
+            except Exception as e:
+                print(f"\n!!! Error retrieving result from worker {i}: {type(e).__name__}: {e}")
+                results.append(([], "*", 0, ""))
 
     # Process results to collect raw positions instead of training samples
     all_raw_positions = [] # List to store (board_obj, board_tensor_np) tuples
@@ -306,15 +300,15 @@ def run_parallel_self_play_batch(
                     saved_indices.add(original_index); pgns_saved_count += 1
                 except Exception as e: print(f"Error writing PGN {pgn_filename}: {e}")
         # 2. Save additional decisive PGNs
-        for game_data in indexed_results_for_pgn:
-            original_index = game_data["index"]; result_str = game_data["result"]; pgn_str_to_save = game_data["pgn"]
-            if result_str in ["1-0", "0-1"] and original_index not in saved_indices:
-                if isinstance(pgn_str_to_save, str) and pgn_str_to_save.strip():
-                    safe_result_str = result_str.replace('/', '-'); pgn_filename = os.path.join(pgn_dir, f"game_{original_index:04d}_{safe_result_str}.pgn")
-                    try:
-                        with open(pgn_filename, "w", encoding='utf-8') as f: f.write(pgn_str_to_save)
-                        saved_indices.add(original_index); pgns_saved_count += 1
-                    except Exception as e: print(f"Error writing PGN {pgn_filename}: {e}")
+        # for game_data in indexed_results_for_pgn:
+        #     original_index = game_data["index"]; result_str = game_data["result"]; pgn_str_to_save = game_data["pgn"]
+        #     if result_str in ["1-0", "0-1"] and original_index not in saved_indices:
+        #         if isinstance(pgn_str_to_save, str) and pgn_str_to_save.strip():
+        #             safe_result_str = result_str.replace('/', '-'); pgn_filename = os.path.join(pgn_dir, f"game_{original_index:04d}_{safe_result_str}.pgn")
+        #             try:
+        #                 with open(pgn_filename, "w", encoding='utf-8') as f: f.write(pgn_str_to_save)
+        #                 saved_indices.add(original_index); pgns_saved_count += 1
+        #             except Exception as e: print(f"Error writing PGN {pgn_filename}: {e}")
         print(f"Saved {pgns_saved_count} PGN files in total.")
     elif num_pgns_to_save > 0: print("No game results available to save PGNs.")
 

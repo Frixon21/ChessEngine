@@ -15,10 +15,10 @@ except ImportError:
         raise NotImplementedError("Please implement or import your move_to_index function")
 
 # --- Constants ---
-NUM_ACTIONS = 4352 # User updated - assumed correct
-STOCKFISH_VALUE_SCALE_CONST = 0.005 # OK
-STOCKFISH_MULTIPV = 10 # OK
-POLICY_TEMPERATURE = 0.25 # OK
+NUM_ACTIONS = 4352 
+STOCKFISH_VALUE_SCALE_CONST = 0.005 
+STOCKFISH_MULTIPV = 10 
+POLICY_TEMPERATURE = 0.2 
 
 
 def score_to_probability(pv_moves, pv_scores, temp=0.1):
@@ -64,9 +64,6 @@ def score_to_probability(pv_moves, pv_scores, temp=0.1):
         winning_mates.sort(key=lambda x: x["score"], reverse=True)
         best_mate_score = winning_mates[0]["score"]
         # Scale based on how many moves faster than the slowest winning mate
-        # Or simply relative to best? Let's use relative for simplicity.
-        # Faster mate = higher value. Use (1 / mate_num) scaled? No, let's use diff.
-        # Use mate_value approach from before, but only on winning mates
         mate_value_scale = 100.0 # Smaller scale for relative diffs
         relative_mate_scores = [mate_value_scale * (m["score"] - best_mate_score) for m in winning_mates]
         # Apply temperature scaling
@@ -140,7 +137,7 @@ def generate_stockfish_targets(raw_positions_data, stockfish_path, analysis_limi
     value and richer policy targets. Includes robustness check in probability calc.
     Processes unique positions. Uses prioritized score handling.
     """
-    if analysis_limit is None: analysis_limit = chess.engine.Limit(depth=8)
+    if analysis_limit is None: analysis_limit = chess.engine.Limit(depth=10)
     stockfish_training_samples = []; engine = None
     try:
         engine = chess.engine.SimpleEngine.popen_uci(stockfish_path)

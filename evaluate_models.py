@@ -29,7 +29,7 @@ def load_model(checkpoint_path, device):
         # Load the state dict
         model.load_state_dict(torch.load(checkpoint_path, map_location=device))
         model.eval() # Set to evaluation mode
-        print(f"Successfully loaded model from {checkpoint_path}")
+        # print(f"Successfully loaded model from {checkpoint_path}")
     except Exception as e:
         print(f"Error loading model state_dict from {checkpoint_path}: {e}")
         raise e # Re-raise the exception
@@ -257,7 +257,7 @@ def match_models_multiprocess(
 # --- Example Match Execution ---
 if __name__ == "__main__":
     # --- Configuration for the match ---
-    MODEL_A_PATH = "trained_model_60k.pth" # e.g., the older model
+    MODEL_A_PATH = "trained_model_itter22.pth" # e.g., the older model
     MODEL_B_PATH = "trained_model.pth"     # e.g., the current/new model
 
     NUM_GAMES = 50 # Total games (will be adjusted to be even)

@@ -33,3 +33,12 @@ def move_to_index(move: chess.Move) -> int:
     else:
         # For non-promotion moves.
         return move.from_square * 64 + move.to_square
+
+
+def lightweight_board_copy(board: chess.Board) -> chess.Board:
+    new_board = chess.Board()  # start from the standard initial position
+    for move in board.move_stack:
+         new_board.push(move)
+    new_board.halfmove_clock = board.halfmove_clock
+    new_board.fullmove_number = board.fullmove_number
+    return new_board

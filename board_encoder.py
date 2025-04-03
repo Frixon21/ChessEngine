@@ -1,6 +1,7 @@
 import chess
 import numpy as np
 import torch
+# import line_profiler
 
 # --- Constants ---
 # Piece types (order matters for flipping)
@@ -60,25 +61,43 @@ def board_to_tensor(board: chess.Board) -> np.ndarray:
     tensor = np.zeros((TOTAL_PLANES, 8, 8), dtype=np.float32)
 
     # --- Planes 0-11: Piece Positions (Perspective Adjusted) ---
-    for square, piece in board.piece_map().items():
-        piece_type = piece.piece_type - 1 # chess.PAWN = 1 -> 0, etc.
-        piece_color = piece.color
+    # for square, piece in board.piece_map().items():
+    #     piece_type = piece.piece_type - 1 # chess.PAWN = 1 -> 0, etc.
+    #     piece_color = piece.color
 
-        # Determine row and column, flip rank if black to move
-        row = chess.square_rank(square)
-        col = chess.square_file(square)
-        if player_color == chess.BLACK:
-            row = _flip_rank(row) # Flip row perspective
+    #     # Determine row and column, flip rank if black to move
+    #     row = chess.square_rank(square)
+    #     col = chess.square_file(square)
+    #     if player_color == chess.BLACK:
+    #         row = _flip_rank(row) # Flip row perspective
 
-        # Determine channel based on piece type and color relative to player
-        if piece_color == player_color:
-            # Friendly piece
-            channel = piece_type # 0-5
-        else:
-            # Opponent piece
-            channel = piece_type + NUM_PIECE_TYPES # 6-11
+    #     # Determine channel based on piece type and color relative to player
+    #     if piece_color == player_color:
+    #         # Friendly piece
+    #         channel = piece_type # 0-5
+    #     else:
+    #         # Opponent piece
+    #         channel = piece_type + NUM_PIECE_TYPES # 6-11
 
-        tensor[channel, row, col] = 1.0
+    #     tensor[channel, row, col] = 1.0
+    
+    piece_map = board.piece_map()
+    if piece_map:
+        squares = np.array(list(piece_map.keys()))
+        pieces = [piece_map[sq] for sq in squares]
+        piece_types = np.array([p.piece_type - 1 for p in pieces])
+        piece_colors = np.array([p.color for p in pieces])
+        rows = np.array([chess.square_rank(sq) for sq in squares])
+        cols = np.array([chess.square_file(sq) for sq in squares])
+        if board.turn == chess.BLACK:
+            rows = 7 - rows  # flip rows for black
+        # Friendly pieces
+        friendly = (piece_colors == board.turn)
+        tensor[piece_types[friendly], rows[friendly], cols[friendly]] = 1.0
+        # Opponent pieces
+        tensor[piece_types[~friendly] + NUM_PIECE_TYPES, rows[~friendly], cols[~friendly]] = 1.0
+    
+    
 
     # --- Plane 12 & 13: Repetition Counts ---
     # These are independent of perspective

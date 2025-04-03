@@ -6,28 +6,78 @@ import torch
 import random # Added for potential sampled logging if needed later
 from board_encoder import board_to_tensor_torch
 from utils import move_to_index
+# import line_profiler
+import numba
 
 
-#Flag to enable/disable detailed MCTS logging
-DETAILED_MCTS_LOGGING = False 
 #How many top moves/policy outputs to log
-LOG_TOP_N = 5
+LOG_TOP_N = 10
 
 # --- Constants ---
-DEBUG_PRINT_REPETITION_DETAILS = False # Keep debug flag if needed
-DEBUG_PRINT_TOP_N_MOVES = 8
 VIRTUAL_LOSS_VALUE = 1.0
+MATE_VALUE = 1000.0
 
 def evaluate_terminal(board: chess.Board):
-    """Checks if the board state is terminal and returns the score from White's perspective."""
+    """
+    Checks if the board state is terminal.
+    If it's checkmate, returns a mate score encoded as:
+        - (MATE_VALUE - ply)
+    where ply is the number of half-moves (from the beginning).
+    This is from the perspective of the player whose turn it is.
+    For non-mate terminal states (stalemate, insufficient material, etc.),
+    returns 0.0.
+    """
     if board.is_checkmate():
-        # Value is from White's perspective: +1 if White won, -1 if Black won
-        return 1.0 if board.turn == chess.BLACK else -1.0 # White won if it's Black's turn now
-    if board.is_stalemate() or board.is_insufficient_material() or \
-       board.is_seventyfive_moves() or board.is_fivefold_repetition():
+         ply = len(board.move_stack)
+         return - (MATE_VALUE - ply)
+    if (board.is_stalemate() or 
+        board.is_insufficient_material() or  
+        board.is_fifty_moves() or
+        board.is_repetition(3)):
         return 0.0
     # Game is not over
     return None
+
+@numba.jit(nopython=True, cache=True)
+def select_child_compiled(
+    # Pass necessary attributes as NumPy arrays or primitive types
+    # This requires refactoring how the main loop calls this function
+    # For now, let's try JIT on the original method and see if it works in object mode
+    # Note: Numba often struggles with classes and object attribute access in nopython mode.
+    # We might need to remove the decorator or use object mode if it fails.
+    children_visits: np.ndarray,
+    children_value_sum: np.ndarray,
+    children_virtual_loss: np.ndarray,
+    children_prior: np.ndarray,
+    children_is_pending: np.ndarray, # Boolean array
+    parent_N_eff: int,
+    c_puct: float,
+    VIRTUAL_LOSS_VALUE: float # Pass constant
+):
+    """Compiled version of selection logic - requires data as arrays"""
+    best_score = -np.inf # Use numpy infinity
+    best_child_idx = -1 # Return index instead of object
+    parent_sqrt_N_eff = np.sqrt(max(1.0, float(parent_N_eff))) # Use float/np.sqrt
+
+    num_children = len(children_visits) # Assuming all arrays have same length
+    for i in range(num_children):
+        if not children_is_pending[i]:
+            N_real = children_visits[i]
+            VLC = children_virtual_loss[i]
+            N_eff = N_real + VLC
+            W_real = children_value_sum[i]
+            W_eff = W_real - (VLC * VIRTUAL_LOSS_VALUE)
+            Q_eff_child = W_eff / N_eff if N_eff > 0 else 0.0
+            prior_term = children_prior[i] if children_prior[i] > 1e-6 else 1e-6
+            # Use np.sqrt here too if needed, ensure float division
+            U_eff = c_puct * prior_term * parent_sqrt_N_eff / (1.0 + float(N_eff))
+            score = -Q_eff_child + U_eff
+
+            if score > best_score:
+                best_score = score
+                best_child_idx = i
+    return best_child_idx
+
 
 class MCTSNode:
     """Represents a node in the Monte Carlo Tree Search."""
@@ -36,10 +86,11 @@ class MCTSNode:
         self.move = move  # The move that led to this node
         self.children = {}  # Maps chess.Move to MCTSNode
         self.visits = 0
-        self.value_sum = 0.0 # Accumulated value from simulations passing through here
+        self.value_sum =  np.float64(0.0) # Accumulated value from simulations passing through here
         self.prior = prior # Prior probability from network (potentially noise-augmented at root)
         self._is_expanded = False # Flag to avoid redundant expansion checks
         self.virtual_loss_count = 0
+        self.is_pending = False
 
     def value(self) -> float:
         """Returns the average value of this node (from this node player's perspective)."""
@@ -69,31 +120,59 @@ class MCTSNode:
                         print(f"Error expanding: move_to_index({move})={move_idx} out of bounds ({len(policy_probs)}). FEN: {board.fen()}")
                 except Exception as e:
                      print(f"Error creating child node for move {move} (Index: {move_idx if 'move_idx' in locals() else 'N/A'}): {e}. FEN: {board.fen()}")
-
-
+    
+    
     def select_child(self, c_puct: float, parent_N_eff: int) -> 'MCTSNode':
         """Selects the child node with the highest PUCT score."""
         best_score = -float('inf')
         best_child = None
         parent_sqrt_N_eff = math.sqrt(max(1, parent_N_eff))
+        
+        child_nodes = list(self.children.values()) # Get children objects
+        if not child_nodes: # Handle case with no children
+             return None
+        
+        try:
+            num_children = len(child_nodes)
+            child_visits = np.array([c.visits for c in child_nodes], dtype=np.int64)
+            child_value_sum = np.array([c.value_sum for c in child_nodes], dtype=np.float64)
+            child_vl = np.array([c.virtual_loss_count for c in child_nodes], dtype=np.int64)
+            child_prior = np.array([c.prior for c in child_nodes], dtype=np.float64)
+            child_pending = np.array([c.is_pending for c in child_nodes], dtype=np.bool_)
 
-        for child in self.children.values():
-            N_real = child.visits
-            VLC = child.virtual_loss_count
-            N_eff = N_real + VLC
-            W_real = child.value_sum
-            W_eff = W_real - (VLC * VIRTUAL_LOSS_VALUE)
-            Q_eff_child = W_eff / N_eff if N_eff > 0 else 0.0 # Value from child's perspective
-            prior_term = child.prior if child.prior > 1e-6 else 1e-6
-            U_eff = c_puct * prior_term * parent_sqrt_N_eff / (1 + N_eff)
-            score = -Q_eff_child + U_eff # Score from parent's perspective
+            best_child_idx = select_child_compiled(
+                child_visits, child_value_sum, child_vl, child_prior, child_pending,
+                parent_N_eff, c_puct, VIRTUAL_LOSS_VALUE
+            )
 
-            if score > best_score:
-                best_score = score
-                best_child = child
+            if best_child_idx != -1:
+                best_child = child_nodes[best_child_idx]
+            else:
+                 best_child = None # No valid non-pending child found by compiled function
 
+        except Exception as e:
+            # Fallback to pure Python if Numba fails (e.g., compilation error, unsupported feature)
+            print(f"Numba JIT failed for select_child, falling back to Python. Error: {e}") # Optional debug
+            best_score = -float('inf') # Recalculate using Python
+            best_child = None
+            for child in child_nodes:
+                if not child.is_pending:
+                    N_real = child.visits; VLC = child.virtual_loss_count; N_eff = N_real + VLC
+                    W_real = child.value_sum; W_eff = W_real - (VLC * VIRTUAL_LOSS_VALUE)
+                    Q_eff_child = W_eff / N_eff if N_eff > 0 else 0.0
+                    prior_term = child.prior if child.prior > 1e-6 else 1e-6
+                    U_eff = c_puct * prior_term * parent_sqrt_N_eff / (1 + N_eff)
+                    score = -Q_eff_child + U_eff
+
+                    if score > best_score:
+                        best_score = score
+                        best_child = child
+
+        # (Warning logic remains the same)
         if best_child is None and self.children:
-             print(f"Warning: select_child found no best_child despite children existing. FEN: {self.parent.move if self.parent else 'Root'}")
+             non_pending_exist = any(not c.is_pending for c in self.children.values())
+             if non_pending_exist:
+                  print(f"Warning: select_child still found no best_child despite non-pending children. FEN: {self.parent.move if self.parent else 'Root'}")
 
         return best_child
 
@@ -128,11 +207,12 @@ def run_simulations_batch(
     c_puct: float = 1.0,
     dirichlet_alpha: float = 0.3,
     dirichlet_epsilon: float = 0.25,
-    return_visit_distribution: bool = False
+    return_visit_distribution: bool = False,
+    log_details: bool = False,
 ):
     """ MCTS with batch inference and corrected terminal backpropagation. """
     root_node = MCTSNode()
-    num_actions = network.policy_fc.out_features
+    # num_actions = network.policy_fc.out_features
     root_legal_moves = list(root_board.legal_moves)
 
     if not root_legal_moves:
@@ -145,15 +225,17 @@ def run_simulations_batch(
         root_tensor = board_to_tensor_torch(root_board, device).unsqueeze(0)
         with torch.no_grad(), torch.autocast(device_type=device.type, dtype=torch.float16, enabled=(device.type == 'cuda')):
             policy_logits, value_tensor = network(root_tensor)
+            num_actions = policy_logits.shape[1]
             policy_probs_gpu = torch.softmax(policy_logits, dim=1)
             initial_value = value_tensor.item()
         initial_policy_probs = policy_probs_gpu.cpu().numpy()[0]
 
-        if DETAILED_MCTS_LOGGING:
+        if log_details:
             print(f"\n--- MCTS Initial Eval: FEN: {root_board.fen()} | Turn: {'W' if root_board.turn else 'B'} ---")
             print(f"  Network Raw Value Prediction: {initial_value:.4f}")
             top_indices = np.argsort(initial_policy_probs)[-LOG_TOP_N:][::-1]
             print(f"  Top {LOG_TOP_N} Policy Predictions (Raw):")
+            # Note: Mapping index back to move here is complex, just show index/prob
             for idx in top_indices: print(f"    Index {idx}: {initial_policy_probs[idx]:.4f}")
             print("--- End Initial Eval ---")
 
@@ -177,81 +259,74 @@ def run_simulations_batch(
     pending_evaluations: list[tuple[MCTSNode, chess.Board]] = []
     completed_sims = 0
     while completed_sims < num_simulations:
+        
         current_node = root_node
-        sim_board = root_board.copy()
+        sim_board = root_board
+        move_history = []
         current_node.virtual_loss_count += 1
-        release_vl_for_this_path = True
+        added_to_batch_this_sim = False
 
         while current_node.is_expanded():
             terminal_value = evaluate_terminal(sim_board)
             if terminal_value is not None:
-                if DETAILED_MCTS_LOGGING: print(f"--- MCTS Terminal Found during Selection: FEN: {sim_board.fen()} | Result(W): {terminal_value:.1f} ---")
-
-                # Determine the player whose turn it was at the node *before* the terminal state
-                current_node_turn = not sim_board.turn # Player who made the move leading to sim_board state
-                if terminal_value == 0.0:
-                    value_for_backprop = 0.0
-                elif current_node_turn == chess.WHITE:
-                    # If White made the move, backprop value from White's perspective
-                    value_for_backprop = terminal_value
-                else: # Black made the move
-                    # If Black made the move, backprop value from Black's perspective
-                    value_for_backprop = -terminal_value
-
-                current_node.backpropagate(value_for_backprop, release_virtual_loss=True)
+                if log_details: 
+                    print(f"--- MCTS Terminal Found during Selection: FEN: {sim_board.fen()} | Result(W): {terminal_value:.1f} ---")
+                current_node.backpropagate(terminal_value, release_virtual_loss=True)
                 completed_sims += 1
-                current_node = None
-                release_vl_for_this_path = False
                 break # Exit selection loop
 
             parent_N_eff = current_node.visits + current_node.virtual_loss_count
             best_child = current_node.select_child(c_puct, parent_N_eff)
 
-            if best_child is None: # Handle selection failure
-                print(f"Warning: select_child returned None. FEN: {sim_board.fen()}")
-                current_node.backpropagate(0.0, release_virtual_loss=True) # Backprop draw as fallback
-                completed_sims += 1
-                current_node = None
-                release_vl_for_this_path = False
-                break
+            if best_child is None:
+                if log_details: 
+                    print(f"--- MCTS Info: No non-pending child found for selection at FEN: {sim_board.fen()}. Breaking sim path. ---")
+                current_node = None # Signal inner loop should terminate
+                break # Exit inner selection loop
 
             best_child.virtual_loss_count += 1
             try:
                 sim_board.push(best_child.move)
+                move_history.append(best_child.move)
                 current_node = best_child
             except Exception as e: # Handle push error
                 print(f"!!! Error pushing move {best_child.move.uci()} during selection: {e} FEN: {sim_board.fen()}")
-                failed_node_parent = best_child.parent
-                if failed_node_parent: failed_node_parent.backpropagate(0.0, release_virtual_loss=True)
+                if best_child.parent:
+                    best_child.parent.backpropagate(0.0, release_virtual_loss=True)
                 completed_sims += 1
-                current_node = None
-                release_vl_for_this_path = False
-                break
+                break          
 
-        if current_node is not None: # Reached a leaf node
+        # If the simulation did not end in a terminal state, we are at a leaf.
+        # In that case, add the leaf's state for batch evaluation.
+        if current_node is not None:
             terminal_value = evaluate_terminal(sim_board)
             if terminal_value is not None: # Leaf is terminal
-                if DETAILED_MCTS_LOGGING: print(f"--- MCTS Terminal Found at Leaf: FEN: {sim_board.fen()} | Result(W): {terminal_value:.1f} ---")
-
-                current_node_turn = not sim_board.turn # Player who made the move leading to sim_board state
-                if terminal_value == 0.0:
-                    value_for_backprop = 0.0
-                elif current_node_turn == chess.WHITE:
-                    value_for_backprop = terminal_value
-                else: # Black's turn
-                    value_for_backprop = -terminal_value
-
-                current_node.backpropagate(value_for_backprop, release_virtual_loss=True)
+                if log_details: print(f"--- MCTS Terminal Found at Leaf: FEN: {sim_board.fen()} | Result(W): {terminal_value:.1f} ---")
+                current_node.backpropagate(terminal_value, release_virtual_loss=True)
                 completed_sims += 1
-                release_vl_for_this_path = False
             else: # Leaf needs expansion
-                pending_evaluations.append((current_node, sim_board.copy()))
-                release_vl_for_this_path = False # VL handled by batch processing
-
+                if not current_node.is_pending:
+                    current_node.is_pending = True 
+                    pending_evaluations.append((current_node, sim_board.copy()))
+                    added_to_batch_this_sim = True
+        
+        # Backtrack: pop all moves pushed during this simulation to restore the root board.
+        while move_history:
+            sim_board.pop()
+            move_history.pop()
+        
+        # --- Process Batch Conditions ---
+        # Condition 1: Batch is full
+        batch_full = len(pending_evaluations) >= inference_batch_size
+        all_sims_started = (completed_sims + len(pending_evaluations)) >= num_simulations
+        final_batch_ready = all_sims_started and pending_evaluations
+        stuck_and_waiting = not added_to_batch_this_sim and pending_evaluations and not final_batch_ready
+        
         # Process batch if needed
-        process_now = len(pending_evaluations) >= inference_batch_size or \
-                      (completed_sims + len(pending_evaluations) >= num_simulations and pending_evaluations)
-
+        # process_now = len(pending_evaluations) >= inference_batch_size or \
+        #               (completed_sims + len(pending_evaluations) >= num_simulations and pending_evaluations)
+        process_now = batch_full or final_batch_ready or stuck_and_waiting
+        
         if process_now:
             # (Batch processing logic remains the same as before)
             states_to_evaluate = [item[1] for item in pending_evaluations]
@@ -272,17 +347,23 @@ def run_simulations_batch(
                     # NN value is from perspective of player in expansion_board_state
                     nn_value_perspective = value_batch_cpu[i]
                     node_to_expand.backpropagate(nn_value_perspective, release_virtual_loss=True)
+                    node_to_expand.is_pending = False 
                     completed_sims += 1
             except Exception as e: # Handle batch errors
                 print(f"!!! Batch Inference/Expansion Exc: {type(e).__name__}: {e}")
                 fen_list_str = "Could not retrieve FENs"
                 try:
-                    max_fen_print = 3; fen_list = [b.fen() for b in states_to_evaluate[:max_fen_print]]; fen_list_str = "; ".join(fen_list);
+                    max_fen_print = 3
+                    fen_list = [b.fen() for b in states_to_evaluate[:max_fen_print]]
+                    fen_list_str = "; ".join(fen_list)
                     if len(states_to_evaluate) > max_fen_print: fen_list_str += "..."
                 except Exception as fen_e: print(f"  (Error getting FENs for debug: {fen_e})")
                 print(f"    ERROR FENs (Batch Eval): {fen_list_str}")
                 failed_count = len(pending_evaluations); print(f"    Failed batch size {failed_count}. Backprop 0 & release VL.")
-                for node_to_fail in nodes_in_batch: node_to_fail.backpropagate(0.0, release_virtual_loss=True); completed_sims += 1
+                for node_to_fail in nodes_in_batch: 
+                    node_to_fail.backpropagate(0.0, release_virtual_loss=True)
+                    node_to_fail.is_pending = False
+                    completed_sims += 1
             pending_evaluations.clear()
 
         if completed_sims >= num_simulations: break # Exit main loop
@@ -302,10 +383,9 @@ def run_simulations_batch(
         fallback_move = root_legal_moves[0] if root_legal_moves else None
         return (fallback_move, {}) if return_visit_distribution else fallback_move
 
-    if DETAILED_MCTS_LOGGING: # Log final stats
-        print(f"\n--- MCTS Final Stats: FEN: {root_board.fen()} | Turn: {'W' if root_board.turn else 'B'} | Total Root Visits: {root_node.visits} ---")
-        move_stats = []
-        parent_total_visits = max(1, root_node.visits); parent_sqrt_visits = math.sqrt(parent_total_visits)
+    if log_details: # Log final stats
+        print(f"\n--- MCTS Final Stats: FEN: {root_board.fen()} | Turn: {'W' if root_board.turn else 'B'} | Root Visits: {root_node.visits} ---")
+        move_stats = []; parent_total_visits = max(1, root_node.visits); parent_sqrt_visits = math.sqrt(parent_total_visits)
         for move, child in valid_children.items():
             N = child.visits; Q_child = child.value(); Q_parent = -Q_child; P = child.prior
             if N == 0: U = c_puct * P * parent_sqrt_visits
@@ -318,6 +398,7 @@ def run_simulations_batch(
             if i >= LOG_TOP_N: break
             print(f"  {stats['Move']:<10} {stats['N']:<8} {stats['Q_parent']:<12.4f} {stats['P']:<12.4f} {stats['U_final']:<12.4f} {stats['PUCT_final']:<12.4f}")
         print("--- End Final Stats ---")
+
 
     # Select move (random tie-breaking among most visited)
     max_visits = -1; top_moves_with_max_visits = []

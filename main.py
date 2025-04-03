@@ -10,19 +10,22 @@ from train import train_network
 from stockfish_processor import generate_stockfish_targets
 from pgn_parser import parse_pgn_and_extract_positions
 
-#os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
+
+import cProfile
+import pstats
+import io
 
 
 # --- Configuration ---
 NUM_ITERATIONS = 50         # Total training iterations (self-play + train)
 
-TARGET_GAMES_PER_ITERATION = 256 # Target number of games per iteration
+TARGET_GAMES_PER_ITERATION = 500 # Target number of games per iteration
 GAMES_RAMP_UP_ITERATIONS = 10 # Reach target games by iteration 10
 INITIAL_GAMES_PER_ITERATION = 128 # Start with fewer games
 
-EPOCHS_PER_ITERATION = 2    # Number of training epochs on the data from one iteration
+EPOCHS_PER_ITERATION = 4    # Number of training epochs on the data from one iteration
 BATCH_SIZE = 256            # Training batch size (adjust based on GPU memory)
-LEARNING_RATE = 0.001       # Training learning rate
+LEARNING_RATE = 0.0005       # Training learning rate
 NUM_WORKERS = 5            # Number of parallel workers for self-play (adjust based on CPU cores/GPU)
 INFERENCE_BATCH_SIZE = 32   # Batch size for inference during self-play (adjust based on GPU memory)
 
@@ -31,12 +34,54 @@ INITIAL_MCTS_SIMULATIONS = 64  # Starting number of simulations
 MAX_MCTS_SIMULATIONS = 256   # Target maximum simulations by the end
 
 MODEL_CHECKPOINT = "trained_model.pth" # Path to save/load the model
+SCRIPTED_MODEL_CHECKPOINT = "scripted_model.pt" # Path to save/load the scripted model
 PGNS_TO_SAVE_PER_ITERATION = 10 # Save the first 10 games each iteration
 
 STOCKFISH_ENGINE_PATH = "stockfish\stockfish-windows-x86-64-avx2.exe"
 
 USE_PGNS = False # Set to True if you want to use PGNs for training
 MAX_GAMES_TO_PROCESS = 1000 # Set to None to process all
+
+PROFILE_SELF_PLAY = False # Set to True to profile one self-play game
+PROFILE_OUTPUT_FILE = "self_play_profile.prof" # Output file for stats
+
+def create_initial_models(device):
+    """Creates and saves initial .pth and .pt models if they don't exist."""
+    pth_exists = os.path.exists(MODEL_CHECKPOINT)
+    pt_exists = os.path.exists(SCRIPTED_MODEL_CHECKPOINT)
+
+    if not pth_exists:
+        print(f"No existing model found at {MODEL_CHECKPOINT}. Initializing random model.")
+        initial_model = ChessNet().to(device)
+        torch.save(initial_model.state_dict(), MODEL_CHECKPOINT)
+        print(f"Initial random model saved to {MODEL_CHECKPOINT}")
+        pth_exists = True # Mark as created
+    else:
+         initial_model = ChessNet().to(device) # Need instance even if loading below
+         print(f"Found existing model at {MODEL_CHECKPOINT}.")
+
+    if pth_exists and not pt_exists:
+        print(f"Scripted model {SCRIPTED_MODEL_CHECKPOINT} not found. Creating from {MODEL_CHECKPOINT}...")
+        try:
+            # Load weights into a model instance
+            initial_model.load_state_dict(torch.load(MODEL_CHECKPOINT, map_location=device))
+            initial_model.eval()
+            # Create example input
+            example_input = torch.randn(1, 22, 8, 8, device=device)
+            # Trace
+            scripted_model = torch.jit.trace(initial_model, example_input)
+            # Save
+            torch.jit.save(scripted_model, SCRIPTED_MODEL_CHECKPOINT)
+            print(f"Initial TorchScript model saved to {SCRIPTED_MODEL_CHECKPOINT}")
+        except Exception as e:
+            print(f"Failed to create initial TorchScript model: {e}")
+            # Decide how to handle - maybe exit? For now, just warn.
+    elif pt_exists:
+         print(f"Found existing scripted model at {SCRIPTED_MODEL_CHECKPOINT}.")
+
+    del initial_model # Free memory
+
+
 
 if __name__ == "__main__":
 
@@ -51,20 +96,62 @@ if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
-    if not os.path.exists(MODEL_CHECKPOINT):
-        print(f"No existing model found at {MODEL_CHECKPOINT}. Initializing random model.")
-        initial_model = ChessNet().to(device)
-        torch.save(initial_model.state_dict(), MODEL_CHECKPOINT)
-        print(f"Initial random model saved to {MODEL_CHECKPOINT}")
-        del initial_model # Free memory
-    else:
-        print(f"Found existing model at {MODEL_CHECKPOINT}. Resuming training.")
+   # --- Initialize Models ---
+    create_initial_models(device) # Create both .pth and .pt if needed
 
-    # --- Main Training Loop ---
-    current_model_path = MODEL_CHECKPOINT
-
+    # --- Define which model to use for each phase ---
+    # Training always resumes from the standard .pth state_dict
+    current_model_for_training = MODEL_CHECKPOINT
+    # Self-play uses the optimized .pt TorchScript model
+    current_model_for_self_play = SCRIPTED_MODEL_CHECKPOINT
     
-    for iteration in range(22, NUM_ITERATIONS + 1):
+    # --- Profiling Block ---
+    if PROFILE_SELF_PLAY:
+        print("\n" + "="*20 + " PROFILING MODE " + "="*20)
+        print(f"Profiling one self-play game. Output will be saved to {PROFILE_OUTPUT_FILE}")
+        print("Ensure NUM_WORKERS=0 for meaningful single-process profiling.")
+
+        # Use settings for a single game, run sequentially
+        profiler_num_games = 1
+        profiler_num_workers = 0 # MUST be 0 for cProfile
+        profiler_mcts_sims = MAX_MCTS_SIMULATIONS # Use configured sims
+
+        # Create profiler object
+        pr = cProfile.Profile()
+        pr.enable() # Start profiling
+
+        # Run the self-play function (which calls the worker internally)
+        raw_positions, game_results, game_lengths = run_parallel_self_play_batch(
+            num_games=profiler_num_games,
+            model_path=current_model_for_self_play,
+            num_workers=profiler_num_workers, # Force 0 workers
+            mcts_simulations=profiler_mcts_sims,
+            inference_batch_size=INFERENCE_BATCH_SIZE,
+            iteration_num=0, # Iteration number doesn't matter much here
+            num_pgns_to_save=0 # Don't save PGNs during profiling
+        )
+
+        pr.disable() # Stop profiling
+        print("Profiling finished.")
+
+        # Save stats to file
+        pr.dump_stats(PROFILE_OUTPUT_FILE)
+        print(f"Profiler stats saved to {PROFILE_OUTPUT_FILE}")
+
+        # Print stats directly to console (can be very long)
+        print("\n--- Profiler Stats Summary (Top 20 by cumulative time) ---")
+        s = io.StringIO()
+        ps = pstats.Stats(pr, stream=s).sort_stats('cumulative')
+        ps.print_stats(20) # Print top 20 functions by cumulative time
+        print(s.getvalue())
+        
+        print(f"  Average Game Length: { sum(game_lengths):.2f} moves (plies)")
+        print("--- End Profiler Stats Summary ---")
+
+        print("Exiting after profiling.")
+        exit() # Stop execution after profiling
+
+    for iteration in range(34, NUM_ITERATIONS + 1):
         print(f"\n===== ITERATION {iteration}/{NUM_ITERATIONS} =====")
 
         if not USE_PGNS:
@@ -98,7 +185,7 @@ if __name__ == "__main__":
 
             raw_positions, game_results, game_lengths = run_parallel_self_play_batch(
                 num_games=current_games_this_iteration,
-                model_path=current_model_path,
+                model_path=current_model_for_self_play,
                 num_workers=NUM_WORKERS,
                 mcts_simulations=current_mcts_simulations,
                 inference_batch_size=INFERENCE_BATCH_SIZE,
@@ -156,10 +243,35 @@ if __name__ == "__main__":
             num_epochs=EPOCHS_PER_ITERATION,
             batch_size=BATCH_SIZE,
             learning_rate=LEARNING_RATE,
-            resume_from_checkpoint=current_model_path # Load the model we just used for self-play
+            resume_from_checkpoint=current_model_for_training # Load the model we just used for self-play
         )
         # Update the path for the next iteration (train_network saves to a fixed path now)
-        current_model_path = updated_model_path
-        print(f"Training finished. Updated model saved to {current_model_path}")
+        current_model_for_training = updated_model_path
+        print(f"Training finished. Updated model saved to {current_model_for_training}")
+        
+        # --- <<< NEW: Create/Update TorchScript Model AFTER Training >>> ---
+        print(f"Creating/Updating TorchScript model from {current_model_for_training}...")
+        try:
+            # Load the newly trained weights
+            model = ChessNet().to(device)
+            model.load_state_dict(torch.load(current_model_for_training, map_location=device))
+            model.eval()
+            # Create example input
+            example_input = torch.randn(1, 22, 8, 8, device=device)
+            # Trace
+            scripted_model = torch.jit.trace(model, example_input)
+            # Save (overwriting previous)
+            torch.jit.save(scripted_model, SCRIPTED_MODEL_CHECKPOINT)
+            print(f"TorchScript model saved to {SCRIPTED_MODEL_CHECKPOINT}")
+            # Update the path for the next self-play iteration
+            current_model_for_self_play = SCRIPTED_MODEL_CHECKPOINT
+            del model # Free memory
+            del scripted_model
+        except Exception as e:
+            print(f"Failed to trace or save TorchScript model after iteration {iteration}: {e}")
+            print(f"Self-play for next iteration will use the standard model: {current_model_for_training}")
+            # Fallback: use the .pth file for self-play if scripting fails
+            current_model_for_self_play = current_model_for_training
+        # --- <<< END NEW BLOCK >>> ---
 
     print("\n===== Training Loop Finished =====")
