@@ -6,7 +6,7 @@ import torch
 import random # Added for potential sampled logging if needed later
 from board_encoder import board_to_tensor_torch
 from utils import move_to_index
-# import line_profiler
+import line_profiler
 import numba
 
 
@@ -27,9 +27,10 @@ def evaluate_terminal(board: chess.Board):
     For non-mate terminal states (stalemate, insufficient material, etc.),
     returns 0.0.
     """
+    
     if board.is_checkmate():
-         ply = len(board.move_stack)
-         return - (MATE_VALUE - ply)
+        if len(board.move_stack) > 0:
+            return 1.0 if board.turn == chess.BLACK else -1.0 # White won if it's Black's turn now
     if (board.is_stalemate() or 
         board.is_insufficient_material() or  
         board.is_fifty_moves() or
@@ -101,9 +102,11 @@ class MCTSNode:
     def is_expanded(self) -> bool:
         return self._is_expanded
 
+    @line_profiler.profile
     def expand(self, board: chess.Board, policy_probs: np.ndarray):
         """Expands the node by creating children for all legal moves."""
-        if self._is_expanded: return
+        if self._is_expanded: 
+            return
         self._is_expanded = True
         current_legal_moves = list(board.legal_moves)
         if not current_legal_moves:
@@ -385,15 +388,22 @@ def run_simulations_batch(
 
     if log_details: # Log final stats
         print(f"\n--- MCTS Final Stats: FEN: {root_board.fen()} | Turn: {'W' if root_board.turn else 'B'} | Root Visits: {root_node.visits} ---")
-        move_stats = []; parent_total_visits = max(1, root_node.visits); parent_sqrt_visits = math.sqrt(parent_total_visits)
+        move_stats = [] 
+        parent_total_visits = max(1, root_node.visits) 
+        parent_sqrt_visits = math.sqrt(parent_total_visits)
         for move, child in valid_children.items():
-            N = child.visits; Q_child = child.value(); Q_parent = -Q_child; P = child.prior
+            N = child.visits
+            Q_child = child.value()
+            Q_parent = -Q_child
+            P = child.prior
             if N == 0: U = c_puct * P * parent_sqrt_visits
-            else: U = c_puct * P * parent_sqrt_visits / (1 + N)
+            else: 
+                U = c_puct * P * parent_sqrt_visits / (1 + N)
             PUCT_final = Q_parent + U
             move_stats.append({"Move": move.uci(), "N": N, "Q_parent": Q_parent, "P": P, "U_final": U, "PUCT_final": PUCT_final})
         move_stats.sort(key=lambda x: x["N"], reverse=True)
-        print(f"  Top {LOG_TOP_N} Moves by Visits:"); print(f"  {'Move':<10} {'N':<8} {'Q(Parent)':<12} {'P(Prior)':<12} {'U(Final)':<12} {'PUCT(Final)':<12}"); print("-" * 70)
+        print(f"  Top {LOG_TOP_N} Moves by Visits:"); print(f"  {'Move':<10} {'N':<8} {'Q(Parent)':<12} {'P(Prior)':<12} {'U(Final)':<12} {'PUCT(Final)':<12}")
+        print("-" * 70)
         for i, stats in enumerate(move_stats):
             if i >= LOG_TOP_N: break
             print(f"  {stats['Move']:<10} {stats['N']:<8} {stats['Q_parent']:<12.4f} {stats['P']:<12.4f} {stats['U_final']:<12.4f} {stats['PUCT_final']:<12.4f}")
@@ -401,7 +411,8 @@ def run_simulations_batch(
 
 
     # Select move (random tie-breaking among most visited)
-    max_visits = -1; top_moves_with_max_visits = []
+    max_visits = -1
+    top_moves_with_max_visits = []
     for child in valid_children.values(): max_visits = max(max_visits, child.visits)
     if max_visits >= 0: top_moves_with_max_visits = [m for m, c in valid_children.items() if c.visits == max_visits]
 

@@ -42,7 +42,7 @@ STOCKFISH_ENGINE_PATH = "stockfish\stockfish-windows-x86-64-avx2.exe"
 USE_PGNS = False # Set to True if you want to use PGNs for training
 MAX_GAMES_TO_PROCESS = 1000 # Set to None to process all
 
-PROFILE_SELF_PLAY = False # Set to True to profile one self-play game
+PROFILE_SELF_PLAY = True # Set to True to profile one self-play game
 PROFILE_OUTPUT_FILE = "self_play_profile.prof" # Output file for stats
 
 def create_initial_models(device):
