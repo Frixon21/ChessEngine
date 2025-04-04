@@ -35,8 +35,8 @@ PGN_STRING_TO_DEBUG = """
 [Termination "THREEFOLD_REPETITION"]
 [PlyCount "99"]
 
-1. c4 c5 2. Nc3 Nc6 3. Nf3 h6 4. d4 d5 5. cxd5 Na5 6. dxc5 g6 7. Qa4+ Bd7 8. Qb5 Bg7 9. c6 Nc4 10. cxd7+ Qxd7 11. Qxc4 e6 12. d6 b6 13. Qc7 f5 14. Qxd7+ Kxd7 15. Nb5 Bc3+ 16. bxc3 e5 17. Nxe5+ Ke6 18. Bf4 g5 19. Bg3 Rd8 20. Nc4 Nf6 21. Nc7+ Kf7 22. Ne5+ Kg8 23. Ng6 Ne4 24. Nxh8 Kf8 25. Ne6+ Kg8 26. Rd1 Kxh8 27. Nxd8 Nd2 28. d7 Kh7 29. Ne6 f4 30. Rxd2 g4 31. d8=Q h5 32. Qe7+ Kg6 33. Bxf4 Kf5 34. Be5 Kg6 35. Qe8+ Kf5 36. Kd1 h4 37. Qf7+ Kxe5 38. Qe8 Ke4 39. Rd4+ Kf5 40. Qd7 h3 41. gxh3 gxh3 42. Nf4+ Kf6 43. Qc7 Kf5 44. e3 Kg5 45. Bd3 Kf6 46. Rd5 a6 47. Rd4 Kg5 48. Rd5+ Kf6 49. Rd4 Kg5
-""" # Game ends here before White's 50th move
+1. Nf3 a6 2. e4 d5 3. e5 e6 4. d4 Bd7 5. Nbd2 Ra7 6. c3 h5 7. Nb3 Ra8 8. Be2 c5 9. Nxc5 Bxc5 10. dxc5 Qh4 11. Nxh4 Ne7 12. O-O Nf5 13. Nxf5 exf5 14. Kh1 h4 15. Bf4 h3 16. g3 g5 17. Bxg5 f6 18. Bxf6 Rf8 19. Qd3 Rxf6 20. exf6 Nc6 21. Qxd5 f4 22. Qe4+ Kf7 23. Qxf4 Be6 24. Qd6 Bd5+ 25. Kg1 Rg8 26. Bh5+ Rg6 27. Rfe1 Ne7 28. Rxe7+ Kf8 29. Re6+ Kg8 30. Qxd5 Rg5 31. Ree1+ Rxd5 32. Bg6 Rd7 33. Re6 Rd5 34. Rae1 Rxc5 35. Re7 Rd5 36. c4 Rd6 37. Bh7+ Kh8 38. Bc2 Rd1 39. Re6 Rxe1+ 40. Rxe1 a5 41. Bg6 b6 42. g4 b5 43. Bd3 bxc4 44. Bxc4 a4 45. f3 a3 46. b3 Kh7 47. Re7+ Kg6 48. Rg7+ Kxf6 49. Rc7 Kg6 50. Re7 Kf6 51. Re4 Kg6 52. Re8 Kg7 53. Ra8 Kf6 54. Ra7 Kg6 55. Rc7 Kg5 56. Re7 Kf4 57. Re1 Kxf3 58. g5 Kg4 59. g6 Kf3 60. g7 Kf4 61. Ba6 Kf3 62. Bb7+ Kf4 63. Re8 Kf5 64. Re1 Kf6 65. g8=Q Kf5 66. Kf1 Kf6 67. Re8 Kf5 68. Qf7+ Kg5 69. Qg6+ Kf4 70. Qf7+ Kg5 71. Qe7+ Kf4 72. Qd6+ Kf5 73. Kg1 Kg5 74. Kf2 Kg4 75. Qe7 Kf4 76. Qd6+ Kf5 77. b4 Kg5 78. Re7 Kf5 79. b5 Kg5 80. b6 Kh4 81. Qc7 Kh5 82. Kg3 Kg5 83. Bh1 Kg6 84. Qd7 Kh5 85. Qc7 Kg5 86. Qc6 Kh5 87. Qc7 Kg5 88. Qb7 Kh5 1/2-1/2"""
+
 
 # TODO: Set the path to the model checkpoint you want to debug
 MODEL_PATH_TO_DEBUG = "trained_model.pth" # Use the checkpoint from Iteration 30
@@ -122,10 +122,9 @@ def debug_mcts_for_position(pgn_string, model_path, simulations, inf_batch_size,
         moves_to_check = {}
         if board.turn == chess.WHITE: # Example for the FEN after 50...Kh4
              moves_to_check = {
-                 "Rd5+(leads to Threefold)": chess.Move.from_uci("d4d5"),
-                 "Qe5+": chess.Move.from_uci("c7e5"),
-                 "Rg1+": chess.Move.from_uci("h1g1"),
-                 "Qg7+": chess.Move.from_uci("c7g7"),
+                 "Qb7+(leads to Threefold)": chess.Move.from_uci("c7b7"),
+                 "Re6+": chess.Move.from_uci("e7e6"),
+                 "Qd6+": chess.Move.from_uci("c7d6"),
              }
 
 

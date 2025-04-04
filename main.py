@@ -19,14 +19,14 @@ import io
 # --- Configuration ---
 NUM_ITERATIONS = 50         # Total training iterations (self-play + train)
 
-TARGET_GAMES_PER_ITERATION = 500 # Target number of games per iteration
+TARGET_GAMES_PER_ITERATION = 50 # Target number of games per iteration
 GAMES_RAMP_UP_ITERATIONS = 10 # Reach target games by iteration 10
 INITIAL_GAMES_PER_ITERATION = 128 # Start with fewer games
 
 EPOCHS_PER_ITERATION = 4    # Number of training epochs on the data from one iteration
 BATCH_SIZE = 256            # Training batch size (adjust based on GPU memory)
 LEARNING_RATE = 0.0005       # Training learning rate
-NUM_WORKERS = 5            # Number of parallel workers for self-play (adjust based on CPU cores/GPU)
+NUM_WORKERS = 6            # Number of parallel workers for self-play (adjust based on CPU cores/GPU)
 INFERENCE_BATCH_SIZE = 32   # Batch size for inference during self-play (adjust based on GPU memory)
 
 # --- Dynamic MCTS Simulation Settings ---
@@ -42,7 +42,7 @@ STOCKFISH_ENGINE_PATH = "stockfish\stockfish-windows-x86-64-avx2.exe"
 USE_PGNS = False # Set to True if you want to use PGNs for training
 MAX_GAMES_TO_PROCESS = 1000 # Set to None to process all
 
-PROFILE_SELF_PLAY = True # Set to True to profile one self-play game
+PROFILE_SELF_PLAY = False # Set to True to profile one self-play game
 PROFILE_OUTPUT_FILE = "self_play_profile.prof" # Output file for stats
 
 def create_initial_models(device):

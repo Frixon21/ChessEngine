@@ -31,8 +31,10 @@ def evaluate_terminal(board: chess.Board):
     """
     
     if board.is_checkmate():
-        if len(board.move_stack) > 0:
-            return 1.0 if board.turn == chess.BLACK else -1.0 # White won if it's Black's turn now
+        # if len(board.move_stack) > 0:
+        #     ply = len(board.move_stack)
+        #     return - (MATE_VALUE - ply) # White won if it's Black's turn now
+        return -1.0
     if (board.is_stalemate() or 
         board.is_insufficient_material() or  
         board.is_fifty_moves() or
@@ -80,6 +82,68 @@ def select_child_compiled(
                 best_score = score
                 best_child_idx = i
     return best_child_idx
+
+def print_ascii_mcts_tree_all_visited(
+    node, board,
+    prefix="",
+    depth=0,
+    max_depth=3,
+    is_last_child=True,
+    move_label="Root"
+):
+    """
+    Recursively prints an ASCII tree of the MCTS to visualize *all*
+    children that have been visited at least once.
+
+    Args:
+        node (MCTSNode): The current node.
+        board (chess.Board): Board in the current node's position.
+        prefix (str): Internal usage for indentation.
+        depth (int): Current recursion depth.
+        max_depth (int): Limit how far to recurse.
+        is_last_child (bool): Whether this node is the last child.
+        move_label (str): Label for the move that led to this node 
+                          (use "Root" for top-level).
+    """
+
+    side_to_move = "White" if board.turn else "Black"
+    branch_symbol = "└──" if is_last_child else "├──"
+    node_label = (
+        f"{move_label} | {side_to_move} to move | "
+        f"Visits={node.visits} | Q={node.value():.3f}"
+    )
+    print(f"{prefix}{branch_symbol} {node_label}")
+
+    # Stop printing deeper if we've hit our recursion limit or if no children
+    if depth >= max_depth or not node.children:
+        return
+
+    # Prepare indentation for the next level
+    child_prefix = prefix + ("    " if is_last_child else "│   ")
+    
+    # Collect children that have been visited > 0
+    child_items = [(move, child_node)
+                   for move, child_node in node.children.items()
+                   if child_node.visits > 0]
+    
+    # Sort them by visits (descending) so the most-explored appear first
+    child_items.sort(key=lambda x: x[1].visits, reverse=True)
+    
+    # Recurse for each child
+    for idx, (move, child_node) in enumerate(child_items):
+        is_last = (idx == len(child_items) - 1)
+        board.push(move)
+        move_uci = move.uci()
+        print_ascii_mcts_tree_all_visited(
+            child_node,
+            board,
+            prefix=child_prefix,
+            depth=depth + 1,
+            max_depth=max_depth,
+            is_last_child=is_last,
+            move_label=move_uci
+        )
+        board.pop()
 
 
 class MCTSNode:
@@ -179,7 +243,7 @@ class MCTSNode:
                         best_score = score
                         best_child = child
 
-        # (Warning logic remains the same)
+
         if best_child is None and self.children:
              non_pending_exist = any(not c.is_pending for c in self.children.values())
              if non_pending_exist:
@@ -432,6 +496,9 @@ def run_simulations_batch(
          print(f"Warning: No moves found with max_visits >= 0. FEN: {root_board.fen()}. Selecting first valid child.")
          if valid_children: best_move = next(iter(valid_children.keys()))
          else: best_move = root_legal_moves[0] if root_legal_moves else None
+
+    if log_details:
+        print_ascii_mcts_tree_all_visited(root_node, root_board, max_depth=5)
 
     # Return results
     if return_visit_distribution:
