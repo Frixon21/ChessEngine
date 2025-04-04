@@ -8,6 +8,7 @@ from board_encoder import board_to_tensor_torch
 from utils import move_to_index
 import line_profiler
 import numba
+import chess.polyglot
 
 
 #How many top moves/policy outputs to log
@@ -16,6 +17,7 @@ LOG_TOP_N = 10
 # --- Constants ---
 VIRTUAL_LOSS_VALUE = 1.0
 MATE_VALUE = 1000.0
+legal_moves_cache = {}
 
 def evaluate_terminal(board: chess.Board):
     """
@@ -108,7 +110,13 @@ class MCTSNode:
         if self._is_expanded: 
             return
         self._is_expanded = True
-        current_legal_moves = list(board.legal_moves)
+        
+        pos_hash = chess.polyglot.zobrist_hash(board)
+        if pos_hash in legal_moves_cache:
+            current_legal_moves = legal_moves_cache[pos_hash]
+        else:
+            current_legal_moves = list(board.legal_moves)
+            legal_moves_cache[pos_hash] = current_legal_moves
         if not current_legal_moves:
             return
 
@@ -201,6 +209,7 @@ class MCTSNode:
 
 # --- Main Batched MCTS Function ---
 
+@line_profiler.profile
 def run_simulations_batch(
     root_board: chess.Board,
     network: torch.nn.Module,

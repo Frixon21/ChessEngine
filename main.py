@@ -151,7 +151,7 @@ if __name__ == "__main__":
         print("Exiting after profiling.")
         exit() # Stop execution after profiling
 
-    for iteration in range(34, NUM_ITERATIONS + 1):
+    for iteration in range(41, NUM_ITERATIONS + 1):
         print(f"\n===== ITERATION {iteration}/{NUM_ITERATIONS} =====")
 
         if not USE_PGNS:
