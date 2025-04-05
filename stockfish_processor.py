@@ -17,7 +17,7 @@ except ImportError:
 # --- Constants ---
 NUM_ACTIONS = 4352 
 STOCKFISH_VALUE_SCALE_CONST = 0.005 
-STOCKFISH_MULTIPV = 10 
+STOCKFISH_MULTIPV = 20 
 POLICY_TEMPERATURE = 0.2 
 
 
@@ -131,18 +131,19 @@ def score_to_probability(pv_moves, pv_scores, temp=0.1):
         return None
 
 
-def generate_stockfish_targets(raw_positions_data, stockfish_path, analysis_limit=None):
+def generate_stockfish_targets(raw_positions_data, stockfish_path, analysis_limit=None, workers=5, multipv=STOCKFISH_MULTIPV, depth=10):
     """
     Analyzes board positions using Stockfish (MultiPV) to generate
     value and richer policy targets. Includes robustness check in probability calc.
     Processes unique positions. Uses prioritized score handling.
     """
-    if analysis_limit is None: analysis_limit = chess.engine.Limit(depth=10)
+    if analysis_limit is None: 
+        analysis_limit = chess.engine.Limit(depth=depth)
     stockfish_training_samples = []; engine = None
     try:
         engine = chess.engine.SimpleEngine.popen_uci(stockfish_path)
-        engine.configure({"Threads": 5, "Hash": 2048})
-        print(f"Stockfish engine initialized from: {stockfish_path} (Requesting MultiPV={STOCKFISH_MULTIPV})")
+        engine.configure({"Threads": workers, "Hash": 2048})
+        print(f"Stockfish engine initialized from: {stockfish_path} (Requesting MultiPV={multipv})")
     except Exception as e: print(f"FATAL: Error initializing Stockfish: {e}"); return None
 
     print(f"Analyzing ~{len(raw_positions_data)} positions with Stockfish...")
@@ -154,7 +155,7 @@ def generate_stockfish_targets(raw_positions_data, stockfish_path, analysis_limi
     for i, (board_obj, board_tensor) in enumerate(analysis_iterator):
         try:
             # --- Get Stockfish Value ---
-            info_list = engine.analyse(board_obj, analysis_limit, multipv=STOCKFISH_MULTIPV)
+            info_list = engine.analyse(board_obj, analysis_limit, multipv=multipv)
             if not info_list: skipped_count += 1; continue
 
             score_obj = info_list[0].get("score")

@@ -9,6 +9,9 @@ from self_play_batch import run_parallel_self_play_batch
 from train import train_network
 from stockfish_processor import generate_stockfish_targets
 from pgn_parser import parse_pgn_and_extract_positions
+from board_encoder import board_to_tensor_torch 
+import csv
+import chess
 
 
 import cProfile
@@ -17,21 +20,21 @@ import io
 
 
 # --- Configuration ---
-NUM_ITERATIONS = 50         # Total training iterations (self-play + train)
+NUM_ITERATIONS = 100         # Total training iterations (self-play + train)
 
-TARGET_GAMES_PER_ITERATION = 50 # Target number of games per iteration
+TARGET_GAMES_PER_ITERATION = 250 # Target number of games per iteration
 GAMES_RAMP_UP_ITERATIONS = 10 # Reach target games by iteration 10
 INITIAL_GAMES_PER_ITERATION = 128 # Start with fewer games
 
 EPOCHS_PER_ITERATION = 4    # Number of training epochs on the data from one iteration
 BATCH_SIZE = 256            # Training batch size (adjust based on GPU memory)
 LEARNING_RATE = 0.0005       # Training learning rate
-NUM_WORKERS = 6            # Number of parallel workers for self-play (adjust based on CPU cores/GPU)
+NUM_WORKERS = 5            # Number of parallel workers for self-play (adjust based on CPU cores/GPU)
 INFERENCE_BATCH_SIZE = 32   # Batch size for inference during self-play (adjust based on GPU memory)
 
 # --- Dynamic MCTS Simulation Settings ---
 INITIAL_MCTS_SIMULATIONS = 64  # Starting number of simulations
-MAX_MCTS_SIMULATIONS = 256   # Target maximum simulations by the end
+MAX_MCTS_SIMULATIONS = 128   # Target maximum simulations by the end
 
 MODEL_CHECKPOINT = "trained_model.pth" # Path to save/load the model
 SCRIPTED_MODEL_CHECKPOINT = "scripted_model.pt" # Path to save/load the scripted model
@@ -44,6 +47,10 @@ MAX_GAMES_TO_PROCESS = 1000 # Set to None to process all
 
 PROFILE_SELF_PLAY = False # Set to True to profile one self-play game
 PROFILE_OUTPUT_FILE = "self_play_profile.prof" # Output file for stats
+
+USE_PUZZLES = True # Set to True if you want to use puzzles for training
+PUZZLE_CSV_PATH = "Games\puzzle_chunks"
+
 
 def create_initial_models(device):
     """Creates and saves initial .pth and .pt models if they don't exist."""
@@ -81,7 +88,91 @@ def create_initial_models(device):
 
     del initial_model # Free memory
 
+def load_puzzle_samples(iteration, num_puzzles=1000, csv_path: str = PUZZLE_CSV_PATH, device: torch.device = torch.device("cpu")):
+    """
+    Load puzzle positions for the current iteration from a Lichess puzzle CSV,
+    parsing the *entire puzzle line* of moves.
 
+    Steps:
+      1) We read 'num_puzzles' lines from the CSV, offset by iteration.
+      2) For each row, parse the FEN (the position before the opponent's move),
+         and the full 'Moves' string (all forced moves in UCI).
+      3) Apply the first move to the board (the opponent's move),
+         leaving the puzzle solver to move. This is puzzle start #1.
+      4) Then for each subsequent move in the puzzle line, push it and record
+         the resulting position. That means each step in the puzzle solution
+         yields a new position (for both sides).
+      5) Return a flat list of (board, board_tensor) for every step in every puzzle.
+
+    Example usage:
+        puzzle_positions = load_puzzle_positions_all_moves(
+            iteration=5,
+            num_puzzles=1000,
+            csv_path="lichess_db_puzzle.csv",
+            device=torch.device("cuda")
+        )
+        # Then pass puzzle_positions to generate_stockfish_targets(...)
+    """
+    puzzle_positions = []
+    with open(csv_path, "r", encoding="utf-8") as f:
+        reader = csv.reader(f)
+        
+        # Attempt to skip a header if it exists:
+        header = next(reader, None)
+        if header and "PuzzleId" in header[0]:
+            pass  # We skipped the header
+        else:
+            # Possibly no header or unexpected format:
+            # If you realize there's no header, uncomment the next line:
+            # f.seek(0)
+            # Or handle differently if needed
+            pass
+
+
+        for row in reader:
+            
+            if len(row) < 3:
+                continue # Malformed row
+            
+            # CSV format:
+            # PuzzleId,FEN,Moves,Rating,RatingDeviation,Popularity,NbPlays,Themes,GameUrl,OpeningTags
+            fen = row[1].strip()
+            moves_str = row[2].strip()
+            if not fen or not moves_str:
+                continue
+            
+            moves_list = moves_str.split()
+            if len(moves_list) < 1:
+                continue
+            
+            board = chess.Board(fen)
+            
+            # 1) The puzzle FEN is the position *before* the opponent's move.
+            #    The first move in 'moves_list' is that opponent move.
+            #    We push it so the solver is to move after that.
+            first_move_uci = moves_list[0]
+            try:
+                board.push_uci(first_move_uci)
+            except Exception as e:
+                print(f"[load_puzzle_positions_all_moves] Invalid move {first_move_uci} for FEN {fen}: {e}")
+                continue
+            
+            # Now the board is at the puzzle's "start" for the solver.
+            puzzle_positions.append((board.copy(), board_to_tensor_torch(board, device)))
+            
+            for next_move_uci in moves_list[1:]:
+                try:
+                    board.push_uci(next_move_uci)
+                except Exception as e:
+                    print(f"[load_puzzle_positions_all_moves] Invalid forced move {next_move_uci} after first move: {e}")
+                    break  # move on to next puzzle
+
+                puzzle_positions.append((board.copy(), board_to_tensor_torch(board, device)))
+                
+    return puzzle_positions
+
+
+    pass
 
 if __name__ == "__main__":
 
@@ -151,7 +242,7 @@ if __name__ == "__main__":
         print("Exiting after profiling.")
         exit() # Stop execution after profiling
 
-    for iteration in range(41, NUM_ITERATIONS + 1):
+    for iteration in range(47, NUM_ITERATIONS + 1):
         print(f"\n===== ITERATION {iteration}/{NUM_ITERATIONS} =====")
 
         if not USE_PGNS:
@@ -228,13 +319,26 @@ if __name__ == "__main__":
                 print(f"Data extraction took {end_time - start_time:.2f} seconds.")
             else:
                 print("Data extraction failed.")
+                
+        if USE_PUZZLES:
+            print("Loading puzzle data for this iteration...")
+            path= PUZZLE_CSV_PATH+f"\{iteration}.csv"
+            raw_puzzle= load_puzzle_samples(iteration, num_puzzles=1000, csv_path=path ,device=device)
+            puzzle_samples = generate_stockfish_targets(raw_puzzle, STOCKFISH_ENGINE_PATH, workers=NUM_WORKERS, multipv=1, depth=12)
 
-            
+         
         # Generate the Stockfish-guided training samples:
-        samples = generate_stockfish_targets(raw_positions, STOCKFISH_ENGINE_PATH)
-        if not samples:
+        games_samples = generate_stockfish_targets(raw_positions, STOCKFISH_ENGINE_PATH, workers=NUM_WORKERS,multipv=15, depth=9)
+        if not games_samples:
             print("!!! ERROR: No samples generated in self-play phase. Stopping.")
             break
+        
+        if USE_PUZZLES:
+            # Combine the puzzle samples with the self-play samples
+            samples = games_samples + puzzle_samples
+        else:
+            samples = games_samples
+        
 
         # --- Step 2: Training ---
         print(f"Starting training phase ({EPOCHS_PER_ITERATION} epochs)...")

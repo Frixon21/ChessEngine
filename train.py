@@ -23,9 +23,19 @@ class MemoryDataset(Dataset):
 
     def __getitem__(self, idx):
         board, policy, outcome = self.samples[idx]
-        return torch.tensor(board, dtype=torch.float32), \
-               torch.tensor(policy, dtype=torch.float32), \
-               torch.tensor(outcome, dtype=torch.float32)
+        # Force board to be a CPU tensor
+        if isinstance(board, torch.Tensor):
+            board_tensor = board.detach().cpu()
+        else:
+            board_tensor = torch.tensor(board, dtype=torch.float32)
+        # Similarly, force policy to be a CPU tensor
+        if isinstance(policy, torch.Tensor):
+            policy_tensor = policy.detach().cpu()
+        else:
+            policy_tensor = torch.tensor(policy, dtype=torch.float32)
+        # Outcome is a float, so convert it to a CPU tensor as well.
+        outcome_tensor = torch.tensor(outcome, dtype=torch.float32)
+        return board_tensor, policy_tensor, outcome_tensor
 
 
 

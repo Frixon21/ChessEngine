@@ -357,6 +357,8 @@ def run_simulations_batch(
             if best_child is None:
                 if log_details: 
                     print(f"--- MCTS Info: No non-pending child found for selection at FEN: {sim_board.fen()}. Breaking sim path. ---")
+                if current_node is not None:
+                    current_node.backpropagate(0.0, release_virtual_loss=True)
                 current_node = None # Signal inner loop should terminate
                 break # Exit inner selection loop
 

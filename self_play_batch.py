@@ -13,14 +13,14 @@ from mcts_batch import run_simulations_batch # We still need MCTS to play the ga
 
 from neural_network import ChessNet
 # Make sure board_to_tensor handles perspective correctly!
-from board_encoder import board_to_tensor
+from board_encoder import board_to_tensor_torch
 from utils import move_to_index # Still needed for MCTS internal expansion if using indices
 
 
 # --- Configuration (can be moved to main config if preferred) ---
 TEMPERATURE = 1.0
 TEMP_THRESHOLD_MOVES = 20 # Number of *plies* (half-moves)
-MAX_GAME_MOVES = 200 # Max plies before declaring draw (avoids infinite games)
+MAX_GAME_MOVES = 300 # Max plies before declaring draw (avoids infinite games)
 
 def self_play_game_batch(model_path: str, mcts_simulations: int, inference_batch_size: int):
     """
@@ -73,8 +73,8 @@ def self_play_game_batch(model_path: str, mcts_simulations: int, inference_batch
             break
 
         board_copy_for_sample = board.copy()
-        board_tensor_np = board_to_tensor(board_copy_for_sample)
-        position_data.append((board_copy_for_sample, board_tensor_np))
+        board_tensor = board_to_tensor_torch(board_copy_for_sample)
+        position_data.append((board_copy_for_sample, board_tensor))
 
         # --- Run MCTS to decide the move ---
         # <<< FIX #1: Correctly assign single return value >>>
