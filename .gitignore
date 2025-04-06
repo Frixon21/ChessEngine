@@ -14,4 +14,4 @@ V2/
 debug_mcts.py
 debug.py
 main.py.lprof
-slef_play_profile.py
+self_play_profile.py
