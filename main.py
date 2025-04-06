@@ -29,7 +29,7 @@ INITIAL_GAMES_PER_ITERATION = 128 # Start with fewer games
 EPOCHS_PER_ITERATION = 4    # Number of training epochs on the data from one iteration
 BATCH_SIZE = 256            # Training batch size (adjust based on GPU memory)
 LEARNING_RATE = 0.0005       # Training learning rate
-NUM_WORKERS = 5            # Number of parallel workers for self-play (adjust based on CPU cores/GPU)
+NUM_WORKERS = 6            # Number of parallel workers for self-play (adjust based on CPU cores/GPU)
 INFERENCE_BATCH_SIZE = 32   # Batch size for inference during self-play (adjust based on GPU memory)
 
 # --- Dynamic MCTS Simulation Settings ---
@@ -242,7 +242,7 @@ if __name__ == "__main__":
         print("Exiting after profiling.")
         exit() # Stop execution after profiling
 
-    for iteration in range(65, NUM_ITERATIONS + 1):
+    for iteration in range(66, NUM_ITERATIONS + 1):
         print(f"\n===== ITERATION {iteration}/{NUM_ITERATIONS} =====")
 
         if not USE_PGNS:
