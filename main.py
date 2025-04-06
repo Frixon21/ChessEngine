@@ -34,7 +34,7 @@ INFERENCE_BATCH_SIZE = 32   # Batch size for inference during self-play (adjust 
 
 # --- Dynamic MCTS Simulation Settings ---
 INITIAL_MCTS_SIMULATIONS = 64  # Starting number of simulations
-MAX_MCTS_SIMULATIONS = 128   # Target maximum simulations by the end
+MAX_MCTS_SIMULATIONS = 256   # Target maximum simulations by the end
 
 MODEL_CHECKPOINT = "trained_model.pth" # Path to save/load the model
 SCRIPTED_MODEL_CHECKPOINT = "scripted_model.pt" # Path to save/load the scripted model
@@ -242,7 +242,7 @@ if __name__ == "__main__":
         print("Exiting after profiling.")
         exit() # Stop execution after profiling
 
-    for iteration in range(47, NUM_ITERATIONS + 1):
+    for iteration in range(65, NUM_ITERATIONS + 1):
         print(f"\n===== ITERATION {iteration}/{NUM_ITERATIONS} =====")
 
         if not USE_PGNS:
@@ -328,7 +328,7 @@ if __name__ == "__main__":
 
          
         # Generate the Stockfish-guided training samples:
-        games_samples = generate_stockfish_targets(raw_positions, STOCKFISH_ENGINE_PATH, workers=NUM_WORKERS,multipv=15, depth=9)
+        games_samples = generate_stockfish_targets(raw_positions, STOCKFISH_ENGINE_PATH, workers=NUM_WORKERS,multipv=15, depth=10)
         if not games_samples:
             print("!!! ERROR: No samples generated in self-play phase. Stopping.")
             break

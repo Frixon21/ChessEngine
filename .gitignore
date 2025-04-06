@@ -8,3 +8,5 @@ old/
 test.py
 self_play_pgns/
 stockfish/
+lichess_bot_master/
+tables/
