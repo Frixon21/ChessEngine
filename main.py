@@ -187,14 +187,14 @@ def pull_repo():
     except subprocess.CalledProcessError as e:
         print("Git pull failed:", e)
         
-def push_repo():
+def push_repo(itteration):
     """
     Runs a git push to update your remote repository.
     """
     try:
         print("Running git push to update trained_model...")
         subprocess.run(["git", "add",  MODEL_CHECKPOINT, SCRIPTED_MODEL_CHECKPOINT, "saved_games"], check=True)
-        commit_message = f"Update model games at {time.ctime()}"
+        commit_message = f"Update model Iteration {itteration}"
         subprocess.run(["git", "commit", "-m", commit_message], check=True)
         subprocess.run(["git", "push"], check=True)
         print("Git push completed successfully.")
@@ -405,6 +405,6 @@ if __name__ == "__main__":
             # Fallback: use the .pth file for self-play if scripting fails
             current_model_for_self_play = current_model_for_training
         # --- <<< END NEW BLOCK >>> ---
-        push_repo()
+        push_repo(iteration)
 
     print("\n===== Training Loop Finished =====")

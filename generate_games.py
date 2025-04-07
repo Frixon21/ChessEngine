@@ -6,8 +6,8 @@ from self_play_batch import self_play_game_worker  # Adjust this import as neede
 from tqdm import tqdm
 import subprocess
 # Configuration: adjust these as needed.
-NUM_GAMES = 100          # Total number of games to generate in this run.
-NUM_WORKERS = 8          # Number of parallel worker processes.
+NUM_GAMES = 250          # Total number of games to generate in this run.
+NUM_WORKERS = 16          # Number of parallel worker processes.
 OUTPUT_DIR = "saved_games"  # Directory where PGNs will be saved.
 
 
@@ -92,4 +92,9 @@ def main():
     git_push_and_pull()
 
 if __name__ == "__main__":
-    main()
+    while True:
+        try:
+            main()
+        except Exception as e:
+            print(f"An error occurred: {e}")
+            time.sleep(10)
