@@ -405,6 +405,7 @@ if __name__ == "__main__":
             # Fallback: use the .pth file for self-play if scripting fails
             current_model_for_self_play = current_model_for_training
         # --- <<< END NEW BLOCK >>> ---
+        pull_repo()
         push_repo(iteration)
 
     print("\n===== Training Loop Finished =====")
