@@ -12,6 +12,8 @@ from pgn_parser import parse_pgn_and_extract_positions
 from board_encoder import board_to_tensor_torch 
 import csv
 import chess
+import glob
+import subprocess
 
 
 import cProfile
@@ -174,6 +176,31 @@ def load_puzzle_samples(iteration, num_puzzles=1000, csv_path: str = PUZZLE_CSV_
 
     pass
 
+def pull_repo():
+    """
+    Runs a git pull to update your local repository.
+    """
+    try:
+        print("Running git pull to update PGN files...")
+        subprocess.run(["git", "pull"], check=True)
+        print("Git pull completed successfully.")
+    except subprocess.CalledProcessError as e:
+        print("Git pull failed:", e)
+        
+def push_repo():
+    """
+    Runs a git push to update your remote repository.
+    """
+    try:
+        print("Running git push to update trained_model...")
+        subprocess.run(["git", "add",  MODEL_CHECKPOINT, SCRIPTED_MODEL_CHECKPOINT, "saved_games"], check=True)
+        commit_message = f"Update model games at {time.ctime()}"
+        subprocess.run(["git", "commit", "-m", commit_message], check=True)
+        subprocess.run(["git", "push"], check=True)
+        print("Git push completed successfully.")
+    except subprocess.CalledProcessError as e:
+        print("Git push failed:", e)
+
 if __name__ == "__main__":
 
     # --- Set up multiprocessing context ---
@@ -308,17 +335,18 @@ if __name__ == "__main__":
                 # Decide how to handle this - stop? continue?
                 # break # Example: Stop if no games completed
         else: #USING PGNS
-            PGN_FILE = f"Games/1-Split1000/{iteration}.pgn"
-            start_time = time.time()
-            raw_positions = parse_pgn_and_extract_positions(
-                PGN_FILE,
-                max_games=MAX_GAMES_TO_PROCESS
-            )
-            end_time = time.time()
-            if raw_positions is not None:
-                print(f"Data extraction took {end_time - start_time:.2f} seconds.")
-            else:
-                print("Data extraction failed.")
+            pull_repo() # Pull the latest PGN files from the repo
+            raw_positions = []
+            pgn_files = glob.glob(os.path.join("saved_games", "*.pgn"))
+            for pgn_file in pgn_files:
+                print(f"Processing file: {pgn_file}")
+                raw_position = parse_pgn_and_extract_positions(pgn_file)
+                if raw_position is not None:
+                    raw_positions.extend(raw_position)
+                    os.remove(pgn_file) # Remove the file after processing
+                else:
+                    print("Data extraction failed.")
+            print(f"Total positions extracted: {len(raw_positions)}")
                 
         if USE_PUZZLES:
             print("Loading puzzle data for this iteration...")
@@ -377,5 +405,6 @@ if __name__ == "__main__":
             # Fallback: use the .pth file for self-play if scripting fails
             current_model_for_self_play = current_model_for_training
         # --- <<< END NEW BLOCK >>> ---
+        push_repo()
 
     print("\n===== Training Loop Finished =====")
