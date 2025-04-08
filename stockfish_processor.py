@@ -142,7 +142,7 @@ def generate_stockfish_targets(raw_positions_data, stockfish_path, analysis_limi
     stockfish_training_samples = []; engine = None
     try:
         engine = chess.engine.SimpleEngine.popen_uci(stockfish_path)
-        engine.configure({"Threads": workers, "Hash": 2048})
+        engine.configure({"Threads": workers, "Hash": 8192})
         print(f"Stockfish engine initialized from: {stockfish_path} (Requesting MultiPV={multipv})")
     except Exception as e: print(f"FATAL: Error initializing Stockfish: {e}"); return None
 

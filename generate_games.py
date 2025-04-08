@@ -39,8 +39,8 @@ def main():
     config = load_config("config.json")
     S3_BUCKET_NAME = config.get("S3_BUCKET_NAME", "chessgamegenerationpgns")
     S3_PREFIX = config.get("S3_PREFIX", "saved_games/")
-    NUM_GAMES = config.get("GAMES_TO_GENERATE", 250)
-    NUM_WORKERS = config.get("NUM_WORKERS_GAME_GEN", 8)
+    NUM_GAMES = 3
+    NUM_WORKERS = 2
     LOCAL_OUTPUT_DIR = config.get("LOCAL_OUTPUT_DIR", "saved_games")
     # Ensure the output directory exists.
     os.makedirs(LOCAL_OUTPUT_DIR, exist_ok=True)
@@ -68,7 +68,7 @@ def main():
         pass
     pool = mp.Pool(processes=NUM_WORKERS)
     tasks = [(current_model_for_self_play, current_mcts_simulations, INFERENCE_BATCH_SIZE, i) for i in range(NUM_GAMES)]
-    
+    results_list = []
     
     # Open the output file in append mode.
     with open(local_output_file, "w", encoding="utf-8") as f:
@@ -79,6 +79,7 @@ def main():
                            total=NUM_GAMES,
                            desc="Self-Play Games"):
             # Assume result is a tuple: (position_data, result_str, moves_played_count, pgn_string)
+            results_list.append(result)
             try:
                 pgn_string = result[3]
             except IndexError:
@@ -96,15 +97,45 @@ def main():
     pool.join()        
     print(f"Finished generating games. Total games saved: {game_count}")
     
+    # --- Calculate and Print Game Statistics ---
+    # Extract individual lists from results_list.
+    game_results = [res[1] for res in results_list if isinstance(res, tuple) and len(res) >= 4]
+    game_lengths = [res[2] for res in results_list if isinstance(res, tuple) and len(res) >= 4]
+    # Flatten the raw positions from all games. (res[0] expected to be a list)
+    raw_positions = []
+    for res in results_list:
+        if isinstance(res, tuple) and len(res) >= 4 and res[0]:
+            raw_positions.extend(res[0])
+    
+    num_games_completed = len(game_results)
+    if num_games_completed > 0:
+        num_draws = game_results.count("1/2-1/2")
+        num_white_wins = game_results.count("1-0")
+        num_black_wins = game_results.count("0-1")
+        num_other_results = num_games_completed - (num_draws + num_white_wins + num_black_wins)
+    
+        draw_rate = (num_draws / num_games_completed) * 100
+        avg_game_length = sum(game_lengths) / num_games_completed if game_lengths else 0
+    
+        print(f"Self-play finished. Completed {num_games_completed} games.")
+        print(f"  Results: White Wins={num_white_wins}, Black Wins={num_black_wins}, Draws={num_draws}, Other={num_other_results}")
+        print(f"  Draw Rate: {draw_rate:.2f}%")
+        print(f"  Average Game Length: {avg_game_length:.2f} moves (plies)")
+        print(f"  Generated {len(raw_positions)} training samples.")
+    else:
+        print("No valid game results were collected.")
+    
     # Upload the local file to S3.
     s3_object_key = os.path.join(S3_PREFIX, os.path.basename(local_output_file))
     upload_to_s3(local_output_file, S3_BUCKET_NAME, s3_object_key)
 
     # Optionally, remove the local file if you wish.
     os.remove(local_output_file)
-    print(f"Local file {local_output_file} deleted after upload.")
-    
+    print(f"Local file {local_output_file} deleted after upload.")    
     git_pull()
+    
+    print(f"Done, Waiting 10s")
+    time.sleep(10)
 
 if __name__ == "__main__":
     while True:

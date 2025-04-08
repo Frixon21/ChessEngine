@@ -16,3 +16,5 @@ debug.py
 main.py.lprof
 self_play_profile.py
 chessgamegenPemKey.pem
+downloaded_pgns/
+saved_games/
