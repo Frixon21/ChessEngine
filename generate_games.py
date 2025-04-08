@@ -6,12 +6,11 @@ from self_play_batch import self_play_game_worker  # Adjust this import as neede
 from tqdm import tqdm
 import subprocess
 import boto3
-# Configuration: adjust these as needed.
-NUM_GAMES = 250          # Total number of games to generate in this run.
-NUM_WORKERS = 8          # Number of parallel worker processes.
-LOCAL_OUTPUT_DIR = "saved_games"  # Directory where PGNs will be saved.
-S3_BUCKET_NAME = "chessgamegenerationpgns"  # Your bucket name.
-S3_PREFIX = "saved_games/"  # The S3 folder (key prefix) where the file will be stored.
+import json
+from utils import load_config
+
+
+
 
 def upload_to_s3(local_file, bucket, object_key):
     """Uploads local_file to S3 bucket with the given object key."""
@@ -35,6 +34,14 @@ def git_pull():
         print("Git pull failed:", e)
 
 def main():
+    
+    # Load configuration values from a JSON file.
+    config = load_config("config.json")
+    S3_BUCKET_NAME = config.get("S3_BUCKET_NAME", "chessgamegenerationpgns")
+    S3_PREFIX = config.get("S3_PREFIX", "saved_games/")
+    NUM_GAMES = config.get("GAMES_TO_GENERATE", 250)
+    NUM_WORKERS = config.get("NUM_WORKERS_GAME_GEN", 8)
+    LOCAL_OUTPUT_DIR = config.get("LOCAL_OUTPUT_DIR", "saved_games")
     # Ensure the output directory exists.
     os.makedirs(LOCAL_OUTPUT_DIR, exist_ok=True)
     

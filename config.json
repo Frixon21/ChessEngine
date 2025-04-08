@@ -1,0 +1,31 @@
+{
+    "NUM_ITERATIONS": 100,
+    "CURRENT_ITERATION": 82,
+    "GAMES_PER_ITERATION": 250,
+    "EPOCHS_PER_ITERATION": 4,
+    "BATCH_SIZE": 256,
+    "LEARNING_RATE": 0.0005,
+    "NUM_WORKERS": 5,
+    "INFERENCE_BATCH_SIZE": 32,
+    "MCTS_SIMULATIONS": 256,
+    "MODEL_CHECKPOINT": "trained_model.pth",
+    "SCRIPTED_MODEL_CHECKPOINT": "scripted_model.pt",
+    "PGNS_TO_SAVE_PER_ITERATION": 10,
+    "STOCKFISH_ENGINE_PATH": "stockfish/stockfish-windows-x86-64-avx2.exe",
+    "STOCKFISH_ENGINE_OPTIONS": {
+        "PUZZLE_DEPTH": 12,
+        "GAMES_DEPTH": 10,
+        "GAMES_MULTIPV": 15
+    },
+    "USE_PGNS": true,
+    "MAX_GAMES_TO_PROCESS": 1000,
+    "PROFILE_SELF_PLAY": false,
+    "PROFILE_OUTPUT_FILE": "self_play_profile.prof",
+    "USE_PUZZLES": true,
+    "PUZZLE_CSV_PATH": "Games/puzzle_chunks",
+    "S3_BUCKET_NAME": "chessgamegenerationpgns",
+    "S3_PREFIX": "saved_games/",
+    "GAMES_TO_GENERATE": 250,
+    "NUM_WORKERS_GAME_GEN": 8,
+    "LOCAL_OUTPUT_DIR": "saved_games"
+}

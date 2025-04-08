@@ -8,264 +8,11 @@ from neural_network import ChessNet
 from self_play_batch import run_parallel_self_play_batch
 from train import train_network
 from stockfish_processor import generate_stockfish_targets
-from pgn_parser import parse_pgn_and_extract_positions
-from board_encoder import board_to_tensor_torch 
-import csv
-import chess
-import glob
-import boto3
-import subprocess
-
+from utils import load_config, update_config, pull_repo, push_repo, create_initial_models, process_downloaded_files, load_puzzle_samples
 
 import cProfile
 import pstats
 import io
-
-
-# --- Configuration ---
-NUM_ITERATIONS = 100         # Total training iterations (self-play + train)
-
-TARGET_GAMES_PER_ITERATION = 250 # Target number of games per iteration
-GAMES_RAMP_UP_ITERATIONS = 10 # Reach target games by iteration 10
-INITIAL_GAMES_PER_ITERATION = 128 # Start with fewer games
-
-EPOCHS_PER_ITERATION = 4    # Number of training epochs on the data from one iteration
-BATCH_SIZE = 256            # Training batch size (adjust based on GPU memory)
-LEARNING_RATE = 0.0005       # Training learning rate
-NUM_WORKERS = 5            # Number of parallel workers for self-play (adjust based on CPU cores/GPU)
-INFERENCE_BATCH_SIZE = 32   # Batch size for inference during self-play (adjust based on GPU memory)
-
-# --- Dynamic MCTS Simulation Settings ---
-INITIAL_MCTS_SIMULATIONS = 64  # Starting number of simulations
-MAX_MCTS_SIMULATIONS = 256   # Target maximum simulations by the end
-
-MODEL_CHECKPOINT = "trained_model.pth" # Path to save/load the model
-SCRIPTED_MODEL_CHECKPOINT = "scripted_model.pt" # Path to save/load the scripted model
-PGNS_TO_SAVE_PER_ITERATION = 10 # Save the first 10 games each iteration
-
-STOCKFISH_ENGINE_PATH = "stockfish\stockfish-windows-x86-64-avx2.exe"
-
-USE_PGNS = True # Set to True if you want to use PGNs for training
-MAX_GAMES_TO_PROCESS = 1000 # Set to None to process all
-
-PROFILE_SELF_PLAY = False # Set to True to profile one self-play game
-PROFILE_OUTPUT_FILE = "self_play_profile.prof" # Output file for stats
-
-USE_PUZZLES = True # Set to True if you want to use puzzles for training
-PUZZLE_CSV_PATH = "Games\puzzle_chunks"
-
-S3_BUCKET_NAME = "chessgamegenerationpgns"
-S3_PREFIX = "saved_games/"
-
-
-def create_initial_models(device):
-    """Creates and saves initial .pth and .pt models if they don't exist."""
-    pth_exists = os.path.exists(MODEL_CHECKPOINT)
-    pt_exists = os.path.exists(SCRIPTED_MODEL_CHECKPOINT)
-
-    if not pth_exists:
-        print(f"No existing model found at {MODEL_CHECKPOINT}. Initializing random model.")
-        initial_model = ChessNet().to(device)
-        torch.save(initial_model.state_dict(), MODEL_CHECKPOINT)
-        print(f"Initial random model saved to {MODEL_CHECKPOINT}")
-        pth_exists = True # Mark as created
-    else:
-         initial_model = ChessNet().to(device) # Need instance even if loading below
-         print(f"Found existing model at {MODEL_CHECKPOINT}.")
-
-    if pth_exists and not pt_exists:
-        print(f"Scripted model {SCRIPTED_MODEL_CHECKPOINT} not found. Creating from {MODEL_CHECKPOINT}...")
-        try:
-            # Load weights into a model instance
-            initial_model.load_state_dict(torch.load(MODEL_CHECKPOINT, map_location=device))
-            initial_model.eval()
-            # Create example input
-            example_input = torch.randn(1, 22, 8, 8, device=device)
-            # Trace
-            scripted_model = torch.jit.trace(initial_model, example_input)
-            # Save
-            torch.jit.save(scripted_model, SCRIPTED_MODEL_CHECKPOINT)
-            print(f"Initial TorchScript model saved to {SCRIPTED_MODEL_CHECKPOINT}")
-        except Exception as e:
-            print(f"Failed to create initial TorchScript model: {e}")
-            # Decide how to handle - maybe exit? For now, just warn.
-    elif pt_exists:
-         print(f"Found existing scripted model at {SCRIPTED_MODEL_CHECKPOINT}.")
-
-    del initial_model # Free memory
-
-def load_puzzle_samples(iteration, num_puzzles=1000, csv_path: str = PUZZLE_CSV_PATH, device: torch.device = torch.device("cpu")):
-    """
-    Load puzzle positions for the current iteration from a Lichess puzzle CSV,
-    parsing the *entire puzzle line* of moves.
-
-    Steps:
-      1) We read 'num_puzzles' lines from the CSV, offset by iteration.
-      2) For each row, parse the FEN (the position before the opponent's move),
-         and the full 'Moves' string (all forced moves in UCI).
-      3) Apply the first move to the board (the opponent's move),
-         leaving the puzzle solver to move. This is puzzle start #1.
-      4) Then for each subsequent move in the puzzle line, push it and record
-         the resulting position. That means each step in the puzzle solution
-         yields a new position (for both sides).
-      5) Return a flat list of (board, board_tensor) for every step in every puzzle.
-
-    Example usage:
-        puzzle_positions = load_puzzle_positions_all_moves(
-            iteration=5,
-            num_puzzles=1000,
-            csv_path="lichess_db_puzzle.csv",
-            device=torch.device("cuda")
-        )
-        # Then pass puzzle_positions to generate_stockfish_targets(...)
-    """
-    puzzle_positions = []
-    with open(csv_path, "r", encoding="utf-8") as f:
-        reader = csv.reader(f)
-        
-        # Attempt to skip a header if it exists:
-        header = next(reader, None)
-        if header and "PuzzleId" in header[0]:
-            pass  # We skipped the header
-        else:
-            # Possibly no header or unexpected format:
-            # If you realize there's no header, uncomment the next line:
-            # f.seek(0)
-            # Or handle differently if needed
-            pass
-
-
-        for row in reader:
-            
-            if len(row) < 3:
-                continue # Malformed row
-            
-            # CSV format:
-            # PuzzleId,FEN,Moves,Rating,RatingDeviation,Popularity,NbPlays,Themes,GameUrl,OpeningTags
-            fen = row[1].strip()
-            moves_str = row[2].strip()
-            if not fen or not moves_str:
-                continue
-            
-            moves_list = moves_str.split()
-            if len(moves_list) < 1:
-                continue
-            
-            board = chess.Board(fen)
-            
-            # 1) The puzzle FEN is the position *before* the opponent's move.
-            #    The first move in 'moves_list' is that opponent move.
-            #    We push it so the solver is to move after that.
-            first_move_uci = moves_list[0]
-            try:
-                board.push_uci(first_move_uci)
-            except Exception as e:
-                print(f"[load_puzzle_positions_all_moves] Invalid move {first_move_uci} for FEN {fen}: {e}")
-                continue
-            
-            # Now the board is at the puzzle's "start" for the solver.
-            puzzle_positions.append((board.copy(), board_to_tensor_torch(board, device)))
-            
-            for next_move_uci in moves_list[1:]:
-                try:
-                    board.push_uci(next_move_uci)
-                except Exception as e:
-                    print(f"[load_puzzle_positions_all_moves] Invalid forced move {next_move_uci} after first move: {e}")
-                    break  # move on to next puzzle
-
-                puzzle_positions.append((board.copy(), board_to_tensor_torch(board, device)))
-                
-    return puzzle_positions
-
-
-    pass
-
-def pull_repo():
-    """
-    Runs a git pull to update your local repository.
-    """
-    try:
-        print("Running git pull to update PGN files...")
-        subprocess.run(["git", "pull"], check=True)
-        print("Git pull completed successfully.")
-    except subprocess.CalledProcessError as e:
-        print("Git pull failed:", e)
-        
-def push_repo(itteration):
-    """
-    Runs a git push to update your remote repository.
-    """
-    try:
-        print("Running git push to update trained_model...")
-        subprocess.run(["git", "add",  MODEL_CHECKPOINT, SCRIPTED_MODEL_CHECKPOINT, "saved_games"], check=True)
-        commit_message = f"Update model Iteration {itteration}"
-        subprocess.run(["git", "commit", "-m", commit_message], check=True)
-        subprocess.run(["git", "push"], check=True)
-        print("Git push completed successfully.")
-    except subprocess.CalledProcessError as e:
-        print("Git push failed:", e)
-
-def download_and_delete_s3_objects(local_dir):
-    """
-    Downloads all objects under the given S3 prefix to a local directory,
-    then deletes them from S3.
-    """
-    s3 = boto3.client('s3')
-    os.makedirs(local_dir, exist_ok=True)
-    
-    # List all objects under the specified prefix.
-    response = s3.list_objects_v2(Bucket=S3_BUCKET_NAME, Prefix=S3_PREFIX)
-    if 'Contents' not in response:
-        print("No objects found in S3 bucket under the prefix.")
-        return []
-    
-    local_files = []
-    for obj in response['Contents']:
-        key = obj['Key']
-        # If the key ends with a slash, assume it is a directory marker and skip it.
-        if key.endswith('/'):
-            continue
-        
-        # Create a local filename using only the base name of the key.
-        local_file = os.path.join(local_dir, os.path.basename(key))
-        print(f"Downloading {key} to {local_file}...")
-        try:
-            s3.download_file(S3_BUCKET_NAME, key, local_file)
-        except Exception as e:
-            print(f"Error downloading {key}: {e}")
-            continue
-        
-        local_files.append(local_file)
-        
-        # After a successful download, delete the object from S3.
-        print(f"Deleting {key} from S3...")
-        try:
-            s3.delete_object(Bucket=S3_BUCKET_NAME, Key=key)
-        except Exception as e:
-            print(f"Error deleting {key} from S3: {e}")
-        
-    return local_files
-
-def process_downloaded_files():
-    local_dir = "downloaded_pgns"
-    # Download files from S3
-    local_files = download_and_delete_s3_objects(local_dir)
-    
-    all_positions = []
-    for pgn_file in local_files:
-        print(f"Processing file: {pgn_file}")
-        positions = parse_pgn_and_extract_positions(pgn_file)
-        if positions is not None:
-            all_positions.extend(positions)
-        else:
-            print(f"Data extraction failed for {pgn_file}")
-        # Optionally, delete the local file after processing.
-        try:
-            os.remove(pgn_file)
-        except Exception as e:
-            print(f"Error deleting local file {pgn_file}: {e}")
-    print(f"Total positions extracted: {len(all_positions)}")
-    return all_positions
 
 if __name__ == "__main__":
 
@@ -279,9 +26,22 @@ if __name__ == "__main__":
     # --- Initialize Model (if it doesn't exist) ---
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
+    
+    
+    # --- Load Basic Configuration ---
+    master_config = load_config()
+    MODEL_CHECKPOINT = master_config.get("MODEL_CHECKPOINT", "trained_model.pth")
+    SCRIPTED_MODEL_CHECKPOINT = master_config.get("SCRIPTED_MODEL_CHECKPOINT", "scripted_model.pt")
+    PROFILE_SELF_PLAY = master_config.get("PROFILE_SELF_PLAY", False)
+    PROFILE_OUTPUT_FILE = master_config.get("PROFILE_OUTPUT_FILE", "self_play_profile.prof")
+    MCTS_SIMULATIONS = master_config.get("MCTS_SIMULATIONS", 64)
+    INFERENCE_BATCH_SIZE = master_config.get("INFERENCE_BATCH_SIZE", 32)
+    NUM_ITERATIONS = master_config.get("NUM_ITERATIONS", 100)
+    CURRENT_ITERATION = master_config.get("CURRENT_ITERATION", 0)
+    
 
    # --- Initialize Models ---
-    create_initial_models(device) # Create both .pth and .pt if needed
+    create_initial_models(device, MODEL_CHECKPOINT, SCRIPTED_MODEL_CHECKPOINT) # Create both .pth and .pt if needed
 
     # --- Define which model to use for each phase ---
     # Training always resumes from the standard .pth state_dict
@@ -298,7 +58,7 @@ if __name__ == "__main__":
         # Use settings for a single game, run sequentially
         profiler_num_games = 1
         profiler_num_workers = 0 # MUST be 0 for cProfile
-        profiler_mcts_sims = MAX_MCTS_SIMULATIONS # Use configured sims
+        profiler_mcts_sims = MCTS_SIMULATIONS # Use configured sims
 
         # Create profiler object
         pr = cProfile.Profile()
@@ -335,43 +95,49 @@ if __name__ == "__main__":
         print("Exiting after profiling.")
         exit() # Stop execution after profiling
 
-    for iteration in range(80, NUM_ITERATIONS + 1):
+    for iteration in range(CURRENT_ITERATION, NUM_ITERATIONS + 1):
         print(f"\n===== ITERATION {iteration}/{NUM_ITERATIONS} =====")
+        
+        # --- ReLoad Configuration ---
+        master_config = load_config()
+        NUM_ITERATIONS = master_config.get("NUM_ITERATIONS", 100)
+        CURRENT_ITERATION = master_config.get("CURRENT_ITERATION", 82)
+        GAMES_PER_ITERATION = master_config.get("GAMES_PER_ITERATION", 250)
+        EPOCHS_PER_ITERATION = master_config.get("EPOCHS_PER_ITERATION", 4)
+        BATCH_SIZE = master_config.get("BATCH_SIZE", 256)
+        LEARNING_RATE = master_config.get("LEARNING_RATE", 0.0005)
+        NUM_WORKERS = master_config.get("NUM_WORKERS", 5)
+        INFERENCE_BATCH_SIZE = master_config.get("INFERENCE_BATCH_SIZE", 32)
+        MCTS_SIMULATIONS = master_config.get("MCTS_SIMULATIONS", 256)
+        MODEL_CHECKPOINT = master_config.get("MODEL_CHECKPOINT", "trained_model.pth")
+        SCRIPTED_MODEL_CHECKPOINT = master_config.get("SCRIPTED_MODEL_CHECKPOINT", "scripted_model.pt")
+        PGNS_TO_SAVE_PER_ITERATION = master_config.get("PGNS_TO_SAVE_PER_ITERATION", 10)
+        STOCKFISH_ENGINE_PATH = master_config.get("STOCKFISH_ENGINE_PATH", "stockfish/stockfish-windows-x86-64-avx2.exe")
+        engine_config = master_config.get("STOCKFISH_ENGINE_CONFIG", {})
+        PUZZLE_DEPTH = engine_config.get("PUZZLE_DEPTH", 12)
+        GAMES_DEPTH = engine_config.get("GAMES_DEPTH", 10)
+        GAMES_MULTIPV = engine_config.get("GAMES_MULTIPV", 15)
+        USE_PGNS = master_config.get("USE_PGNS", True)
+        MAX_GAMES_TO_PROCESS = master_config.get("MAX_GAMES_TO_PROCESS", 1000)
+        PROFILE_SELF_PLAY = master_config.get("PROFILE_SELF_PLAY", False)
+        PROFILE_OUTPUT_FILE = master_config.get("PROFILE_OUTPUT_FILE", "self_play_profile.prof")
+        USE_PUZZLES = master_config.get("USE_PUZZLES", True)
+        PUZZLE_CSV_PATH = master_config.get("PUZZLE_CSV_PATH", "Games/puzzle_chunks")
+        S3_BUCKET_NAME = master_config.get("S3_BUCKET_NAME", "chessgamegenerationpgns")
+        S3_PREFIX = master_config.get("S3_PREFIX", "saved_games/")
 
         if not USE_PGNS:
-            # --- Calculate MCTS simulations for this iteration ---
-            # Linear interpolation from INITIAL to MAX simulations over NUM_ITERATIONS
-            if NUM_ITERATIONS <= 1:
-                current_mcts_simulations = INITIAL_MCTS_SIMULATIONS
-            else:
-                # Interpolate linearly
-                sims = INITIAL_MCTS_SIMULATIONS + iteration * INFERENCE_BATCH_SIZE
-                current_mcts_simulations = int(round(sims))
-
-            # Ensure we don't accidentally go below initial or above max due to rounding/edge cases
-            current_mcts_simulations = max(INITIAL_MCTS_SIMULATIONS, min(MAX_MCTS_SIMULATIONS, current_mcts_simulations))
-
-            print(f"Using {current_mcts_simulations} MCTS simulations for self-play this iteration.")
+            print(f"Using {MCTS_SIMULATIONS} MCTS simulations for self-play this iteration.")
             
-            if iteration >= GAMES_RAMP_UP_ITERATIONS:
-                current_games_this_iteration = TARGET_GAMES_PER_ITERATION            
-            else:
-                # Linear ramp-up from INITIAL to TARGET games
-                progress = max(0, iteration - 1) / max(1, GAMES_RAMP_UP_ITERATIONS - 1)
-                games = INITIAL_GAMES_PER_ITERATION + (TARGET_GAMES_PER_ITERATION - INITIAL_GAMES_PER_ITERATION) * progress
-                current_games_this_iteration = int(round(games))
-                # Ensure it's at least the initial value
-                current_games_this_iteration = max(INITIAL_GAMES_PER_ITERATION, current_games_this_iteration)
-
             # --- Step 1: Self-Play Data Generation ---
-            print(f"Starting self-play phase ({current_games_this_iteration} games)...")
+            print(f"Starting self-play phase ({GAMES_PER_ITERATION} games)...")
             start_time = time.time()
 
             raw_positions, game_results, game_lengths = run_parallel_self_play_batch(
-                num_games=current_games_this_iteration,
+                num_games=GAMES_PER_ITERATION,
                 model_path=current_model_for_self_play,
                 num_workers=NUM_WORKERS,
-                mcts_simulations=current_mcts_simulations,
+                mcts_simulations=MCTS_SIMULATIONS,
                 inference_batch_size=INFERENCE_BATCH_SIZE,
                 iteration_num=iteration,                 # Pass current iteration
                 num_pgns_to_save=PGNS_TO_SAVE_PER_ITERATION # Pass save count
@@ -391,7 +157,7 @@ if __name__ == "__main__":
                 draw_rate = (num_draws / num_games_completed) * 100
                 avg_game_length = sum(game_lengths) / num_games_completed if game_lengths else 0
 
-                print(f"Self-play finished. Completed {num_games_completed}/{current_games_this_iteration} games.")
+                print(f"Self-play finished. Completed {num_games_completed}/{GAMES_PER_ITERATION} games.")
                 print(f"  Results: White Wins={num_white_wins}, Black Wins={num_black_wins}, Drawclears={num_draws}, Other={num_other_results}")
                 print(f"  Draw Rate: {draw_rate:.2f}%")
                 print(f"  Average Game Length: {avg_game_length:.2f} moves (plies)")
@@ -401,11 +167,11 @@ if __name__ == "__main__":
                 # Decide how to handle this - stop? continue?
                 # break # Example: Stop if no games completed
         else: #USING PGNS
-            raw_positions = process_downloaded_files()
+            raw_positions = process_downloaded_files(S3_BUCKET_NAME, S3_PREFIX)
                 
         if USE_PUZZLES:
             print("Loading puzzle data for this iteration...")
-            path= PUZZLE_CSV_PATH+f"\{iteration}.csv"
+            path = os.path.join(PUZZLE_CSV_PATH, f"{iteration}.csv")
             raw_puzzle= load_puzzle_samples(iteration, num_puzzles=1000, csv_path=path ,device=device)
             puzzle_samples = generate_stockfish_targets(raw_puzzle, STOCKFISH_ENGINE_PATH, workers=NUM_WORKERS, multipv=1, depth=12)
 
@@ -461,6 +227,9 @@ if __name__ == "__main__":
             current_model_for_self_play = current_model_for_training
         # --- <<< END NEW BLOCK >>> ---
         pull_repo()
-        push_repo(iteration)
+        push_repo(iteration, MODEL_CHECKPOINT, SCRIPTED_MODEL_CHECKPOINT)
+        update_config({"CURRENT_ITERATION": iteration+1})
+        print(f"Done, Waiting 10s")
+        time.sleep(10)
 
     print("\n===== Training Loop Finished =====")
