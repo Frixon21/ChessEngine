@@ -86,7 +86,7 @@ def push_repo(itteration, model_checkpoint, scripted_model_checkpoint):
     """
     try:
         print("Running git push to update trained_model...")
-        subprocess.run(["git", "add",  model_checkpoint, scripted_model_checkpoint, "saved_games"], check=True)
+        subprocess.run(["git", "add",  model_checkpoint, scripted_model_checkpoint], check=True)
         commit_message = f"Update model Iteration {itteration}"
         subprocess.run(["git", "commit", "-m", commit_message], check=True)
         subprocess.run(["git", "push"], check=True)

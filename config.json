@@ -25,7 +25,7 @@
     "PUZZLE_CSV_PATH": "Games/puzzle_chunks",
     "S3_BUCKET_NAME": "chessgamegenerationpgns",
     "S3_PREFIX": "saved_games/",
-    "GAMES_TO_GENERATE": 250,
+    "GAMES_TO_GENERATE": 100,
     "NUM_WORKERS_GAME_GEN": 8,
     "LOCAL_OUTPUT_DIR": "saved_games"
 }
