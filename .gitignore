@@ -15,3 +15,4 @@ debug_mcts.py
 debug.py
 main.py.lprof
 self_play_profile.py
+chessgamegenPemKey.pem

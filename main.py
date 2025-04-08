@@ -13,6 +13,7 @@ from board_encoder import board_to_tensor_torch
 import csv
 import chess
 import glob
+import boto3
 import subprocess
 
 
@@ -31,7 +32,7 @@ INITIAL_GAMES_PER_ITERATION = 128 # Start with fewer games
 EPOCHS_PER_ITERATION = 4    # Number of training epochs on the data from one iteration
 BATCH_SIZE = 256            # Training batch size (adjust based on GPU memory)
 LEARNING_RATE = 0.0005       # Training learning rate
-NUM_WORKERS = 6            # Number of parallel workers for self-play (adjust based on CPU cores/GPU)
+NUM_WORKERS = 5            # Number of parallel workers for self-play (adjust based on CPU cores/GPU)
 INFERENCE_BATCH_SIZE = 32   # Batch size for inference during self-play (adjust based on GPU memory)
 
 # --- Dynamic MCTS Simulation Settings ---
@@ -44,7 +45,7 @@ PGNS_TO_SAVE_PER_ITERATION = 10 # Save the first 10 games each iteration
 
 STOCKFISH_ENGINE_PATH = "stockfish\stockfish-windows-x86-64-avx2.exe"
 
-USE_PGNS = False # Set to True if you want to use PGNs for training
+USE_PGNS = True # Set to True if you want to use PGNs for training
 MAX_GAMES_TO_PROCESS = 1000 # Set to None to process all
 
 PROFILE_SELF_PLAY = False # Set to True to profile one self-play game
@@ -52,6 +53,9 @@ PROFILE_OUTPUT_FILE = "self_play_profile.prof" # Output file for stats
 
 USE_PUZZLES = True # Set to True if you want to use puzzles for training
 PUZZLE_CSV_PATH = "Games\puzzle_chunks"
+
+S3_BUCKET_NAME = "chessgamegenerationpgns"
+S3_PREFIX = "saved_games/"
 
 
 def create_initial_models(device):
@@ -201,6 +205,68 @@ def push_repo(itteration):
     except subprocess.CalledProcessError as e:
         print("Git push failed:", e)
 
+def download_and_delete_s3_objects(local_dir):
+    """
+    Downloads all objects under the given S3 prefix to a local directory,
+    then deletes them from S3.
+    """
+    s3 = boto3.client('s3')
+    os.makedirs(local_dir, exist_ok=True)
+    
+    # List all objects under the specified prefix.
+    response = s3.list_objects_v2(Bucket=S3_BUCKET_NAME, Prefix=S3_PREFIX)
+    if 'Contents' not in response:
+        print("No objects found in S3 bucket under the prefix.")
+        return []
+    
+    local_files = []
+    for obj in response['Contents']:
+        key = obj['Key']
+        # If the key ends with a slash, assume it is a directory marker and skip it.
+        if key.endswith('/'):
+            continue
+        
+        # Create a local filename using only the base name of the key.
+        local_file = os.path.join(local_dir, os.path.basename(key))
+        print(f"Downloading {key} to {local_file}...")
+        try:
+            s3.download_file(S3_BUCKET_NAME, key, local_file)
+        except Exception as e:
+            print(f"Error downloading {key}: {e}")
+            continue
+        
+        local_files.append(local_file)
+        
+        # After a successful download, delete the object from S3.
+        print(f"Deleting {key} from S3...")
+        try:
+            s3.delete_object(Bucket=S3_BUCKET_NAME, Key=key)
+        except Exception as e:
+            print(f"Error deleting {key} from S3: {e}")
+        
+    return local_files
+
+def process_downloaded_files():
+    local_dir = "downloaded_pgns"
+    # Download files from S3
+    local_files = download_and_delete_s3_objects(local_dir)
+    
+    all_positions = []
+    for pgn_file in local_files:
+        print(f"Processing file: {pgn_file}")
+        positions = parse_pgn_and_extract_positions(pgn_file)
+        if positions is not None:
+            all_positions.extend(positions)
+        else:
+            print(f"Data extraction failed for {pgn_file}")
+        # Optionally, delete the local file after processing.
+        try:
+            os.remove(pgn_file)
+        except Exception as e:
+            print(f"Error deleting local file {pgn_file}: {e}")
+    print(f"Total positions extracted: {len(all_positions)}")
+    return all_positions
+
 if __name__ == "__main__":
 
     # --- Set up multiprocessing context ---
@@ -269,7 +335,7 @@ if __name__ == "__main__":
         print("Exiting after profiling.")
         exit() # Stop execution after profiling
 
-    for iteration in range(71, NUM_ITERATIONS + 1):
+    for iteration in range(80, NUM_ITERATIONS + 1):
         print(f"\n===== ITERATION {iteration}/{NUM_ITERATIONS} =====")
 
         if not USE_PGNS:
@@ -335,18 +401,7 @@ if __name__ == "__main__":
                 # Decide how to handle this - stop? continue?
                 # break # Example: Stop if no games completed
         else: #USING PGNS
-            pull_repo() # Pull the latest PGN files from the repo
-            raw_positions = []
-            pgn_files = glob.glob(os.path.join("saved_games", "*.pgn"))
-            for pgn_file in pgn_files:
-                print(f"Processing file: {pgn_file}")
-                raw_position = parse_pgn_and_extract_positions(pgn_file)
-                if raw_position is not None:
-                    raw_positions.extend(raw_position)
-                    os.remove(pgn_file) # Remove the file after processing
-                else:
-                    print("Data extraction failed.")
-            print(f"Total positions extracted: {len(raw_positions)}")
+            raw_positions = process_downloaded_files()
                 
         if USE_PUZZLES:
             print("Loading puzzle data for this iteration...")

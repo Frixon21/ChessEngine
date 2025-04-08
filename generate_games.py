@@ -5,48 +5,48 @@ import multiprocessing as mp
 from self_play_batch import self_play_game_worker  # Adjust this import as needed
 from tqdm import tqdm
 import subprocess
+import boto3
 # Configuration: adjust these as needed.
 NUM_GAMES = 250          # Total number of games to generate in this run.
-NUM_WORKERS = 16          # Number of parallel worker processes.
-OUTPUT_DIR = "saved_games"  # Directory where PGNs will be saved.
+NUM_WORKERS = 8          # Number of parallel worker processes.
+LOCAL_OUTPUT_DIR = "saved_games"  # Directory where PGNs will be saved.
+S3_BUCKET_NAME = "chessgamegenerationpgns"  # Your bucket name.
+S3_PREFIX = "saved_games/"  # The S3 folder (key prefix) where the file will be stored.
 
+def upload_to_s3(local_file, bucket, object_key):
+    """Uploads local_file to S3 bucket with the given object key."""
+    s3 = boto3.client('s3')
+    try:
+        s3.upload_file(local_file, bucket, object_key)
+        print(f"Uploaded {local_file} to s3://{bucket}/{object_key}")
+    except Exception as e:
+        print("Failed to upload file to S3:", e)
 
-def git_push_and_pull():
+def git_pull():
     """
     Stage changes, commit them with a timestamp message, push to GitHub,
     and then pull the latest changes.
     """
     try:
-        # Stage the output directory (or you can stage all changes with '.')
-        subprocess.run(["git", "add", OUTPUT_DIR], check=True)
-        
-        # Create a commit message with the current time.
-        commit_message = f"Update self-play games at {time.ctime()}"
-        subprocess.run(["git", "commit", "-m", commit_message], check=True)
-        
-        # Push the commit.
-        subprocess.run(["git", "push"], check=True)
-        
-        # Pull the latest changes (if any).
+        print("Running git pull to update PGN files...")
         subprocess.run(["git", "pull"], check=True)
-        
-        print("Git push and pull completed successfully.")
+        print("Git pull completed successfully.")
     except subprocess.CalledProcessError as e:
-        print("Git command failed:", e)
+        print("Git pull failed:", e)
 
 def main():
     # Ensure the output directory exists.
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    os.makedirs(LOCAL_OUTPUT_DIR, exist_ok=True)
     
     # Create a filename based on current time.
     timestamp = int(time.time())
-    output_file = os.path.join(OUTPUT_DIR, f"games_{timestamp}.pgn")
+    local_output_file = os.path.join(LOCAL_OUTPUT_DIR, f"games_{timestamp}.pgn")
     
     print(f"Generating {NUM_GAMES} games using {NUM_WORKERS} workers...")
-    print(f"PGNs will be saved to {output_file}")
+    print(f"PGNs will be saved to {local_output_file}")
    
     # Define necessary variables for self-play
-    current_model_for_self_play = "/home/jupyter/project/ChessEngine/scripted_model.pt"  # Update path as needed
+    current_model_for_self_play = "./scripted_model.pt"  # Update path as needed
     current_mcts_simulations = 256
     INFERENCE_BATCH_SIZE = 64
 
@@ -64,7 +64,7 @@ def main():
     
     
     # Open the output file in append mode.
-    with open(output_file, "w", encoding="utf-8") as f:
+    with open(local_output_file, "w", encoding="utf-8") as f:
         game_count = 0
         
         # Use imap_unordered to get results as soon as they are ready.
@@ -89,7 +89,15 @@ def main():
     pool.join()        
     print(f"Finished generating games. Total games saved: {game_count}")
     
-    git_push_and_pull()
+    # Upload the local file to S3.
+    s3_object_key = os.path.join(S3_PREFIX, os.path.basename(local_output_file))
+    upload_to_s3(local_output_file, S3_BUCKET_NAME, s3_object_key)
+
+    # Optionally, remove the local file if you wish.
+    os.remove(local_output_file)
+    print(f"Local file {local_output_file} deleted after upload.")
+    
+    git_pull()
 
 if __name__ == "__main__":
     while True:
