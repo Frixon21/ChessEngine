@@ -39,8 +39,8 @@ def main():
     config = load_config("config.json")
     S3_BUCKET_NAME = config.get("S3_BUCKET_NAME", "chessgamegenerationpgns")
     S3_PREFIX = config.get("S3_PREFIX", "saved_games/")
-    NUM_GAMES = 3
-    NUM_WORKERS = 2
+    NUM_GAMES = config.get("GAMES_TO_GENERATE",100)
+    NUM_WORKERS = config.get("NUM_WORKERS_GAME_GEN",8)
     LOCAL_OUTPUT_DIR = config.get("LOCAL_OUTPUT_DIR", "saved_games")
     # Ensure the output directory exists.
     os.makedirs(LOCAL_OUTPUT_DIR, exist_ok=True)
