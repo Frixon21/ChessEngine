@@ -68,7 +68,8 @@ def main():
         pass
     pool = mp.Pool(processes=NUM_WORKERS)
     tasks = [(current_model_for_self_play, current_mcts_simulations, INFERENCE_BATCH_SIZE, i) for i in range(NUM_GAMES)]
-    results_list = []
+    game_results = []
+    game_lengths = []
     
     # Open the output file in append mode.
     with open(local_output_file, "w", encoding="utf-8") as f:
@@ -78,10 +79,11 @@ def main():
         for result in tqdm(pool.imap_unordered(self_play_game_worker, tasks),
                            total=NUM_GAMES,
                            desc="Self-Play Games"):
-            # Assume result is a tuple: (position_data, result_str, moves_played_count, pgn_string)
-            results_list.append(result)
+            # Assume result is a tuple: (position_data, result_str, moves_played_count, pgn_string)  
             try:
                 pgn_string = result[3]
+                game_results.append(result[1])
+                game_lengths.append(result[2])
             except IndexError:
                 print("Warning: Received unexpected result format, skipping game.")
                 continue
@@ -99,13 +101,6 @@ def main():
     
     # --- Calculate and Print Game Statistics ---
     # Extract individual lists from results_list.
-    game_results = [res[1] for res in results_list if isinstance(res, tuple) and len(res) >= 4]
-    game_lengths = [res[2] for res in results_list if isinstance(res, tuple) and len(res) >= 4]
-    # Flatten the raw positions from all games. (res[0] expected to be a list)
-    raw_positions = []
-    for res in results_list:
-        if isinstance(res, tuple) and len(res) >= 4 and res[0]:
-            raw_positions.extend(res[0])
     
     num_games_completed = len(game_results)
     if num_games_completed > 0:
@@ -121,7 +116,6 @@ def main():
         print(f"  Results: White Wins={num_white_wins}, Black Wins={num_black_wins}, Draws={num_draws}, Other={num_other_results}")
         print(f"  Draw Rate: {draw_rate:.2f}%")
         print(f"  Average Game Length: {avg_game_length:.2f} moves (plies)")
-        print(f"  Generated {len(raw_positions)} training samples.")
     else:
         print("No valid game results were collected.")
     

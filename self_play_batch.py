@@ -74,8 +74,6 @@ def self_play_game_batch(model_path: str, mcts_simulations: int, inference_batch
 
         board_copy_for_sample = board.copy()
         board_tensor = board_to_tensor_torch(board_copy_for_sample)
-        if torch.is_tensor(board_tensor):
-            board_tensor = board_tensor.cpu() 
         position_data.append((board_copy_for_sample, board_tensor))
 
         # --- Run MCTS to decide the move ---

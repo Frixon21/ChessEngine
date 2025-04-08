@@ -225,9 +225,16 @@ def download_and_delete_s3_objects(local_dir, bucket_name, prefix):
     os.makedirs(local_dir, exist_ok=True)
     
     # List all objects under the specified prefix.
-    response = s3.list_objects_v2(Bucket=bucket_name, Prefix=prefix)
-    while 'Contents' not in response:
-        print("No objects found in S3 bucket under the prefix., waiting 60s")
+    while True:
+        response = s3.list_objects_v2(Bucket=bucket_name, Prefix=prefix)
+        objects = response.get('Contents', [])
+        # Filter out objects that are just directory markers (keys ending with '/')
+        valid_objects = [obj for obj in objects if not obj['Key'].endswith('/')]
+        
+        if valid_objects:
+            break
+        
+        print("No valid objects found in S3 bucket under the prefix. Waiting 60 seconds...")
         time.sleep(60)
     
     local_files = []
