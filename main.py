@@ -113,9 +113,10 @@ if __name__ == "__main__":
         SCRIPTED_MODEL_CHECKPOINT = master_config.get("SCRIPTED_MODEL_CHECKPOINT", "scripted_model.pt")
         PGNS_TO_SAVE_PER_ITERATION = master_config.get("PGNS_TO_SAVE_PER_ITERATION", 10)
         STOCKFISH_ENGINE_PATH = master_config.get("STOCKFISH_ENGINE_PATH", "stockfish/stockfish-windows-x86-64-avx2.exe")
-        engine_config = master_config.get("STOCKFISH_ENGINE_CONFIG", {})
+        engine_config = master_config.get("STOCKFISH_ENGINE_OPTIONS", {})
         PUZZLE_DEPTH = engine_config.get("PUZZLE_DEPTH", 12)
-        GAMES_DEPTH = engine_config.get("GAMES_DEPTH", 10)
+        SEARCH_DEPTH = engine_config.get("SEARCH_DEPTH", 20)
+        SEARCH_TIME = engine_config.get("SEARCH_TIME", 0.2)
         GAMES_MULTIPV = engine_config.get("GAMES_MULTIPV", 15)
         USE_PGNS = master_config.get("USE_PGNS", True)
         MAX_GAMES_TO_PROCESS = master_config.get("MAX_GAMES_TO_PROCESS", 1000)
@@ -125,6 +126,7 @@ if __name__ == "__main__":
         PUZZLE_CSV_PATH = master_config.get("PUZZLE_CSV_PATH", "Games/puzzle_chunks")
         S3_BUCKET_NAME = master_config.get("S3_BUCKET_NAME", "chessgamegenerationpgns")
         S3_PREFIX = master_config.get("S3_PREFIX", "saved_games/")
+        FILES_TO_DOWNLOAD = master_config.get("FILES_TO_DOWNLOAD", 3)
 
         if not USE_PGNS:
             print(f"Using {MCTS_SIMULATIONS} MCTS simulations for self-play this iteration.")
@@ -167,17 +169,17 @@ if __name__ == "__main__":
                 # Decide how to handle this - stop? continue?
                 # break # Example: Stop if no games completed
         else: #USING PGNS
-            raw_positions = process_downloaded_files(S3_BUCKET_NAME, S3_PREFIX)
+            raw_positions = process_downloaded_files(S3_BUCKET_NAME, S3_PREFIX, FILES_TO_DOWNLOAD)
                 
         if USE_PUZZLES:
             print("Loading puzzle data for this iteration...")
             path = os.path.join(PUZZLE_CSV_PATH, f"{iteration}.csv")
             raw_puzzle= load_puzzle_samples(iteration, num_puzzles=1000, csv_path=path ,device=device)
-            puzzle_samples = generate_stockfish_targets(raw_puzzle, STOCKFISH_ENGINE_PATH, workers=NUM_WORKERS, multipv=1, depth=12)
+            puzzle_samples = generate_stockfish_targets(raw_puzzle, STOCKFISH_ENGINE_PATH, workers=NUM_WORKERS, multipv=1, depth=PUZZLE_DEPTH, stime=0.05)
 
          
         # Generate the Stockfish-guided training samples:
-        games_samples = generate_stockfish_targets(raw_positions, STOCKFISH_ENGINE_PATH, workers=NUM_WORKERS,multipv=15, depth=10)
+        games_samples = generate_stockfish_targets(raw_positions, STOCKFISH_ENGINE_PATH, workers=NUM_WORKERS,multipv=GAMES_MULTIPV, depth=SEARCH_DEPTH, stime=SEARCH_TIME)
         if not games_samples:
             print("!!! ERROR: No samples generated in self-play phase. Stopping.")
             break

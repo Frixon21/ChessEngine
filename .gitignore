@@ -5,7 +5,7 @@ cpu_env/
 dist/
 Games/
 old/
-test.py
+test*
 self_play_pgns/
 stockfish/
 lichess_bot_master/

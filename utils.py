@@ -9,6 +9,7 @@ import csv
 from board_encoder import board_to_tensor_torch 
 import boto3
 import time
+import re
 
 
 def move_to_index(move: chess.Move) -> int:
@@ -216,13 +217,26 @@ def load_puzzle_samples(iteration, num_puzzles=1000, csv_path: str = "Games/puzz
 
     pass
 
-def download_and_delete_s3_objects(local_dir, bucket_name, prefix):
+def download_and_move_s3_objects(local_dir, bucket_name, prefix, files_to_download=3):
     """
-    Downloads all objects under the given S3 prefix to a local directory,
-    then deletes them from S3.
+    Downloads up to 'files_to_download' objects under the given S3 prefix to a local directory,
+    then moves them in S3 by copying to a 'processed_files/' folder and deleting the original.
+    Assumes filenames are of the format "games_{timestamp}.pgn".
     """
     s3 = boto3.client('s3')
     os.makedirs(local_dir, exist_ok=True)
+    
+    
+    # Define a helper function to extract the timestamp from the filename.
+    def extract_timestamp(key):
+        # Use a regex to match the pattern "games_{timestamp}.pgn"
+        pattern = r"games_(\d+)\.pgn"
+        match = re.match(pattern, os.path.basename(key))
+        if match:
+            # Convert the extracted timestamp to an integer. Adjust type if needed.
+            return int(match.group(1))
+        # In case of a non-conforming filename, return a high value so it sorts last.
+        return float('inf')
     
     # List all objects under the specified prefix.
     while True:
@@ -231,14 +245,21 @@ def download_and_delete_s3_objects(local_dir, bucket_name, prefix):
         # Filter out objects that are just directory markers (keys ending with '/')
         valid_objects = [obj for obj in objects if not obj['Key'].endswith('/')]
         
-        if valid_objects:
+        if len(valid_objects) >= files_to_download:
+            print(f"Found {len(valid_objects)} valid items.")
             break
         
-        print("No valid objects found in S3 bucket under the prefix. Waiting 60 seconds...")
+        print(f"Found {len(valid_objects)} valid items. Waiting 60 seconds for at least {files_to_download} items...")
         time.sleep(60)
     
+    if len(valid_objects) > files_to_download:
+        sorted_objects = sorted(valid_objects, key=lambda obj: extract_timestamp(obj['Key']))
+        selected_objects = sorted_objects[:files_to_download]
+    else:
+        selected_objects = valid_objects
+    
     local_files = []
-    for obj in response['Contents']:
+    for obj in selected_objects:
         key = obj['Key']
         # If the key ends with a slash, assume it is a directory marker and skip it.
         if key.endswith('/'):
@@ -246,7 +267,7 @@ def download_and_delete_s3_objects(local_dir, bucket_name, prefix):
         
         # Create a local filename using only the base name of the key.
         local_file = os.path.join(local_dir, os.path.basename(key))
-        print(f"Downloading {key} to {local_file}...")
+        # print(f"Downloading {key} to {local_file}...")
         try:
             s3.download_file(bucket_name, key, local_file)
         except Exception as e:
@@ -255,23 +276,31 @@ def download_and_delete_s3_objects(local_dir, bucket_name, prefix):
         
         local_files.append(local_file)
         
+        new_key = os.path.join("processed_files/", os.path.basename(key))
+        # print(f"Moving {key} to {new_key} in S3...")
+        
         # After a successful download, delete the object from S3.
-        print(f"Deleting {key} from S3...")
+        # print(f"Deleting {key} from S3...")
         try:
+            s3.copy_object(
+                Bucket=bucket_name,
+                CopySource={'Bucket': bucket_name, 'Key': key},
+                Key=new_key
+            )
             s3.delete_object(Bucket=bucket_name, Key=key)
         except Exception as e:
-            print(f"Error deleting {key} from S3: {e}")
+            print(f"Error moving {key} to {new_key} in S3: {e}")
         
     return local_files
 
-def process_downloaded_files(bucket_name, prefix):
+def process_downloaded_files(bucket_name, prefix, FILES_TO_DOWNLOAD):
     local_dir = "downloaded_pgns"
-    # Download files from S3
-    local_files = download_and_delete_s3_objects(local_dir, bucket_name, prefix)
+    # Download files from S3    
+    local_files = download_and_move_s3_objects(local_dir, bucket_name, prefix, files_to_download=FILES_TO_DOWNLOAD)
     
     all_positions = []
     for pgn_file in local_files:
-        print(f"Processing file: {pgn_file}")
+        # print(f"Processing file: {pgn_file}")
         positions = parse_pgn_and_extract_positions(pgn_file)
         if positions is not None:
             all_positions.extend(positions)

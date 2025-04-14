@@ -61,21 +61,21 @@ def score_to_probability(pv_moves, pv_scores, temp=0.1):
     # --- Prioritize Score Types ---
     if winning_mates:
         # Higher score = faster mate
-        winning_mates.sort(key=lambda x: x["score"], reverse=True)
+        winning_mates.sort(key=lambda x: x["score"])#lower number = faster mate
         best_mate_score = winning_mates[0]["score"]
         # Scale based on how many moves faster than the slowest winning mate
-        mate_value_scale = 100.0 # Smaller scale for relative diffs
-        relative_mate_scores = [mate_value_scale * (m["score"] - best_mate_score) for m in winning_mates]
+        mate_value_scale = 10.0 # Smaller scale for relative diffs
+        relative_mate_scores = [-mate_value_scale * (m["score"] - best_mate_score) for m in winning_mates]
         # Apply temperature scaling
         safe_temp = max(temp, 1e-6)
-        scaled_rel_mates = [s / (safe_temp + 1e-9) for s in relative_mate_scores] # Simpler scaling for mates
+        scaled_rel_mates = [s / (safe_temp*30 + 1e-9) for s in relative_mate_scores]
         for i, m_info in enumerate(winning_mates):
              scaled_scores_dict[m_info["index"]] = scaled_rel_mates[i]
         category_indices = [m["index"] for m in winning_mates]
 
     elif cp_scores:
         # Sort by CP score descending
-        cp_scores.sort(key=lambda x: x["score"], reverse=True)
+        cp_scores.sort(key=lambda x: x["score"], reverse=True)#Higher score = better position
         best_cp = cp_scores[0]["score"]
         relative_cp_scores = [s["score"] - best_cp for s in cp_scores]
         # Scale relative scores by temperature
@@ -87,10 +87,10 @@ def score_to_probability(pv_moves, pv_scores, temp=0.1):
 
     elif losing_mates:
         # Sort by "least bad" mate (largest negative number / smallest abs value)
-        losing_mates.sort(key=lambda x: x["score"], reverse=True)
+        losing_mates.sort(key=lambda x: x["score"])# # Higher score = less bad
         least_bad_mate = losing_mates[0]["score"] # e.g., -4 is better than -1
         # Score relative to least bad mate (will be 0 or negative)
-        relative_losing_mates = [m["score"] - least_bad_mate for m in losing_mates]
+        relative_losing_mates = [-m["score"] + least_bad_mate for m in losing_mates]
         # Scale relative scores by temperature
         safe_temp = max(temp, 1e-6)
         # Negative scores scaled by temp -> smaller negatives become relatively larger after exp
@@ -131,19 +131,19 @@ def score_to_probability(pv_moves, pv_scores, temp=0.1):
         return None
 
 
-def generate_stockfish_targets(raw_positions_data, stockfish_path, analysis_limit=None, workers=5, multipv=STOCKFISH_MULTIPV, depth=10):
+def generate_stockfish_targets(raw_positions_data, stockfish_path, analysis_limit=None, workers=5, multipv=STOCKFISH_MULTIPV, depth=10, stime=None):
     """
     Analyzes board positions using Stockfish (MultiPV) to generate
     value and richer policy targets. Includes robustness check in probability calc.
     Processes unique positions. Uses prioritized score handling.
     """
     if analysis_limit is None: 
-        analysis_limit = chess.engine.Limit(depth=depth)
+        analysis_limit = chess.engine.Limit(depth=depth, time=stime)
     stockfish_training_samples = []; engine = None
     try:
         engine = chess.engine.SimpleEngine.popen_uci(stockfish_path)
         engine.configure({"Threads": workers, "Hash": 8192})
-        print(f"Stockfish engine initialized from: {stockfish_path} (Requesting MultiPV={multipv})")
+        print(f"Stockfish engine initialized from: {stockfish_path} (Requesting MultiPV={multipv}, depth={depth}, stime={stime})")
     except Exception as e: print(f"FATAL: Error initializing Stockfish: {e}"); return None
 
     print(f"Analyzing ~{len(raw_positions_data)} positions with Stockfish...")

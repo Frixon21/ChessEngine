@@ -257,7 +257,7 @@ def match_models_multiprocess(
 # --- Example Match Execution ---
 if __name__ == "__main__":
     # --- Configuration for the match ---
-    MODEL_A_PATH = "trained_model_itter34.pth" # e.g., the older model
+    MODEL_A_PATH = "trained_model_itter60.pth" # e.g., the older model
     MODEL_B_PATH = "trained_model.pth"     # e.g., the current/new model
 
     NUM_GAMES = 100 # Total games (will be adjusted to be even)

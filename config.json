@@ -1,6 +1,6 @@
 {
-    "NUM_ITERATIONS": 1000,
-    "CURRENT_ITERATION": 94,
+    "NUM_ITERATIONS": 200,
+    "CURRENT_ITERATION": 175,
     "GAMES_PER_ITERATION": 250,
     "EPOCHS_PER_ITERATION": 4,
     "BATCH_SIZE": 256,
@@ -13,9 +13,10 @@
     "PGNS_TO_SAVE_PER_ITERATION": 10,
     "STOCKFISH_ENGINE_PATH": "stockfish/stockfish-windows-x86-64-avx2.exe",
     "STOCKFISH_ENGINE_OPTIONS": {
-        "PUZZLE_DEPTH": 12,
-        "GAMES_DEPTH": 10,
-        "GAMES_MULTIPV": 15
+        "PUZZLE_DEPTH": 20,
+        "SEARCH_DEPTH": 18,
+        "SEARCH_TIME": 0.125,
+        "GAMES_MULTIPV": 10
     },
     "USE_PGNS": true,
     "MAX_GAMES_TO_PROCESS": 1000,
@@ -27,5 +28,6 @@
     "S3_PREFIX": "saved_games/",
     "GAMES_TO_GENERATE": 100,
     "NUM_WORKERS_GAME_GEN": 8,
-    "LOCAL_OUTPUT_DIR": "saved_games"
+    "LOCAL_OUTPUT_DIR": "saved_games",
+    "FILES_TO_DOWNLOAD": 5
 }

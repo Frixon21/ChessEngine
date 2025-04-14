@@ -29,13 +29,13 @@ def parse_pgn_and_extract_positions(pgn_file_path, max_games=None, sample_every_
     raw_positions_data = []
     games_processed = 0
 
-    print(f"Opening PGN file: {pgn_file_path}")
+    # print(f"Opening PGN file: {pgn_file_path}")
     try:
         with open(pgn_file_path, 'r', encoding='utf-8') as pgn_file:
             # Use tqdm to show progress based on estimated number of games if possible,
             # otherwise just show iterations. Estimating games accurately is hard.
             game_reader = chess.pgn.read_game(pgn_file)
-            pbar = tqdm(desc="Processing Games", unit=" game")
+            # pbar = tqdm(desc="Processing Games", unit=" game")
 
             while True:
                 if max_games is not None and games_processed >= max_games:
@@ -57,7 +57,7 @@ def parse_pgn_and_extract_positions(pgn_file_path, max_games=None, sample_every_
                     print(f"\nWarning: Skipping game due to unexpected error during read: {type(e).__name__} - {e}")
                     continue # Skip to next game
 
-                pbar.update(1)
+                # pbar.update(1)
                 games_processed += 1
 
                 # --- Process Game ---
@@ -84,7 +84,7 @@ def parse_pgn_and_extract_positions(pgn_file_path, max_games=None, sample_every_
                      print(f"\nError processing moves in game {games_processed}: {type(e).__name__} - {e}")
                      # Continue to the next game
 
-            pbar.close()
+            # pbar.close()
 
     except FileNotFoundError:
         print(f"Error: PGN file not found at {pgn_file_path}")
@@ -93,7 +93,7 @@ def parse_pgn_and_extract_positions(pgn_file_path, max_games=None, sample_every_
         print(f"Error opening or reading PGN file {pgn_file_path}: {e}")
         return None
 
-    print(f"\nFinished processing. Extracted {len(raw_positions_data)} positions from {games_processed} games.")
+    # print(f"\nFinished processing. Extracted {len(raw_positions_data)} positions from {games_processed} games.")
     return raw_positions_data
 
 # --- Example Usage ---
